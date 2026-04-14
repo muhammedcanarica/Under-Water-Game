@@ -1,176 +1,268 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
-using Unity.Cinemachine; 
+using Unity.Cinemachine;
+
+public enum PlayerMode
+{
+    Water,
+    Land
+}
 
 /// <summary>
-/// Su altı 2D karakter kontrol scripti.
-/// Floaty, yüzme hissi veren hareket ve 8 yönlü dash sistemi içerir.
-/// Tüm değişkenler Inspector'dan ayarlanabilir.
+/// Su altı (floaty) ve Kara (klasik platformer) modları arasında geçiş yapabilen gelişmiş karakter kontrol scripti.
+/// F tuşu ile modlar arasında geçiş yapılır.
 /// </summary>
 public class PlayerController : MonoBehaviour
 {
-    // ==================== HAREKET AYARLARI ====================
+    // ==================== MOD SİSTEMİ ====================
+    [Header("Mod Sistemi")]
+    public PlayerMode currentMode = PlayerMode.Water;
 
-    [Header("Hareket Ayarları")]
+    // ==================== HAREKET AYARLARI ====================
+    [Header("Su ve Genel Hareket Ayarları")]
     [Tooltip("Maksimum hareket hızı")]
     public float moveSpeed = 5f;
 
-    [Tooltip("Hızlanma yumuşaklığı (düşük = daha floaty)")]
+    [Tooltip("Su altı: Hızlanma yumuşaklığı (düşük = daha floaty)")]
     [Range(0.01f, 1f)]
     public float accelerationSmoothing = 0.08f;
 
-    [Tooltip("Yavaşlama yumuşaklığı (düşük = daha fazla inertia)")]
+    [Tooltip("Su altı: Yavaşlama yumuşaklığı (düşük = daha fazla inertia)")]
     [Range(0.01f, 1f)]
     public float decelerationSmoothing = 0.04f;
 
-    [Tooltip("Su direnci / sürtünme katsayısı (velocity'yi yavaşça azaltır)")]
+    [Tooltip("Su altı: Su direnci / sürtünme katsayısı (velocity'yi yavaşça azaltır)")]
     [Range(0f, 5f)]
     public float waterDrag = 1.5f;
 
-    // ==================== DASH AYARLARI ====================
+    // ==================== LAND (KARA) MODU AYARLARI ====================
+    [Header("Kara Modu Ayarları")]
+    [Tooltip("Zıplama kuvveti (AddForce ile uygulanacak)")]
+    public float jumpForce = 12f;
+    public Transform groundCheck;
+    public float groundRadius = 0.2f;
+    public LayerMask groundLayer;
+    private bool isGrounded;
+    private bool facingRight = true;
 
-    [Header("Dash Ayarları")]
-    [Tooltip("Dash hız çarpanı")]
+    [Header("Kara Dash Ayarları")]
+    public float landDashForce = 20f;
+    public float landDashDuration = 0.15f;
+    public float landDashCooldown = 1f;
+
+    private bool isLandDashing;
+    private float landDashTimeRemaining;
+    private float landDashCooldownTimer;
+
+    // ==================== DASH AYARLARI (SADECE WATER) ====================
+    [Header("Dash Ayarları (Water Mode)")]
     public float dashSpeed = 15f;
-
-    [Tooltip("Dash süresi (saniye)")]
     public float dashDuration = 0.2f;
-
-    [Tooltip("Dash bekleme süresi (saniye)")]
     public float dashCooldown = 1f;
 
-    // ==================== JUICE (EKLENTİ) AYARLARI ====================
+    private bool isDashing;
+    public bool IsDashing => isDashing;
+    private float dashTimeRemaining;
+    private float dashCooldownTimer;
+    private Vector2 dashDirection;
 
+    // ==================== JUICE (EKLENTİ) AYARLARI ====================
     [Header("Juice (Eklentiler) Ayarları")]
-    [Tooltip("Sahnemizdeki Cinemachine Kamerası (Shake için)")]
     public CinemachineCamera vcam;
     private CinemachineBasicMultiChannelPerlin noise;
 
-    [Tooltip("Dash sırasında gözükecek Trail")]
     public TrailRenderer dashTrail;
-
-    [Tooltip("Bounce anında doğacak (spawn) Particle Prefab")]
     public GameObject hitParticlePrefab;
-
-    [Tooltip("Çarpma anındaki tatmin edici kısa duraksama (Hit Stop) süresi")]
     public float hitStopDuration = 0.05f;
 
     // ==================== REFERANSLAR ====================
-
     [Header("Referanslar")]
-    [Tooltip("Rigidbody2D bileşeni (otomatik atanır)")]
     public Rigidbody2D rb;
 
     // ==================== ÖZEL DEĞİŞKENLER ====================
+    
+    // Knockback (Hit-Stun)
+    private bool isKnockback;
+    private float knockbackTimer = 0f;
 
     // Hareket
     private Vector2 inputDirection;
     private Vector2 currentVelocity;
-    private Vector2 velocityRef; // SmoothDamp referansı
-
-    // Dash
-    private bool isDashing;
-    public bool IsDashing => isDashing; // Dışarıdan okunabilmesi için eklendi
-
-    private float dashTimeRemaining;
-    private float dashCooldownTimer;
-    private Vector2 dashDirection;
+    private Vector2 velocityRef; 
 
     // ==================== UNITY YAŞAM DÖNGÜSÜ ====================
 
     private void Awake()
     {
-        // Rigidbody2D referansını al
-        if (rb == null)
-            rb = GetComponent<Rigidbody2D>();
+        if (rb == null) rb = GetComponent<Rigidbody2D>();
         
-        // Başlangıçta Trail kapalı olsun
-        if (dashTrail != null)
-            dashTrail.emitting = false;
+        if (dashTrail != null) dashTrail.emitting = false;
     }
 
     private void Start()
     {
-        // Kamera titremesi için Noise bileşenini al (Unity 6'da GetComponent ile alınır)
         if (vcam != null)
         {
             noise = vcam.GetComponent<CinemachineBasicMultiChannelPerlin>();
         }
 
-        // Yerçekimini kapat — su altında yüzüyoruz
-        rb.gravityScale = 0f;
-
-        // Rigidbody'nin kendi drag'ini sıfırla, biz kendimiz yönetiyoruz
         rb.linearDamping = 0f;
         rb.angularDamping = 0f;
+
+        // Başlangıç modunu kur
+        ApplyModeProperties(currentMode);
     }
 
-    /// <summary>
-    /// Input okuma her zaman Update'te yapılır.
-    /// </summary>
     private void Update()
     {
         ReadInput();
-        HandleDashInput();
+        HandleModeSwitchInput();
+        HandleActionInput();
         UpdateTimers();
+        CheckGround();
     }
 
-    /// <summary>
-    /// Fizik hesaplamaları FixedUpdate'te yapılır.
-    /// </summary>
     private void FixedUpdate()
     {
-        if (isDashing)
+        // 1. Knockback (Geri tepme) durumundayken input kabul etme
+        if (isKnockback)
         {
-            PerformDash();
+            knockbackTimer -= Time.fixedDeltaTime;
+            
+            if (knockbackTimer <= 0f)
+            {
+                isKnockback = false;
+            }
+            // Sadece return yapiyoruz (Movement kodu override etmesin diye engelleniyor)
+            return;
         }
-        else
+
+        // 2. Mod kontrolü
+        if (currentMode == PlayerMode.Water)
         {
-            ApplyMovement();
-            ApplyWaterDrag();
+            if (isDashing)
+            {
+                PerformWaterDash();
+            }
+            else
+            {
+                HandleWaterMovement();
+                ApplyWaterDrag();
+            }
+        }
+        else if (currentMode == PlayerMode.Land)
+        {
+            if (isLandDashing)
+            {
+                // Land dash süresince normal kontrol iptal, hizi sabit tut
+                landDashTimeRemaining -= Time.fixedDeltaTime;
+                if (landDashTimeRemaining <= 0f)
+                {
+                    EndLandDash();
+                }
+            }
+            else
+            {
+                HandleLandMovement();
+            }
         }
     }
 
-    // ==================== INPUT ====================
+    // ==================== INPUT & MOD ====================
 
-    /// <summary>
-    /// Horizontal ve Vertical input değerlerini okur (WASD / Arrow Keys).
-    /// </summary>
     private void ReadInput()
     {
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
 
         inputDirection = new Vector2(horizontal, vertical).normalized;
+
+        if (horizontal > 0f) facingRight = true;
+        else if (horizontal < 0f) facingRight = false;
     }
 
-    /// <summary>
-    /// Space tuşu ile dash başlatır.
-    /// </summary>
-    private void HandleDashInput()
+    private void HandleModeSwitchInput()
     {
-        if (Input.GetKeyDown(KeyCode.Space) && CanDash())
+        if (Input.GetKeyDown(KeyCode.F))
         {
-            StartDash();
+            PlayerMode newMode = (currentMode == PlayerMode.Water) ? PlayerMode.Land : PlayerMode.Water;
+            ApplyModeProperties(newMode);
         }
     }
 
-    // ==================== HAREKET ====================
+    private void ApplyModeProperties(PlayerMode mode)
+    {
+        currentMode = mode;
+
+        if (currentMode == PlayerMode.Water)
+        {
+            if (isLandDashing) EndLandDash();
+            rb.gravityScale = 0f;
+        }
+        else if (currentMode == PlayerMode.Land)
+        {
+            if (isDashing) EndWaterDash();
+            rb.gravityScale = 3f;
+        }
+    }
+
+    private void HandleActionInput()
+    {
+        // Zıplama / Su Dash Tuşu (Space)
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            if (currentMode == PlayerMode.Water)
+            {
+                if (CanWaterDash()) StartWaterDash();
+            }
+            else if (currentMode == PlayerMode.Land)
+            {
+                if (isGrounded) Jump();
+            }
+        }
+
+        // Kara Dash Tuşu (Left Shift)
+        if (Input.GetKeyDown(KeyCode.LeftShift))
+        {
+            if (currentMode == PlayerMode.Land && CanLandDash())
+            {
+                StartLandDash();
+            }
+        }
+    }
+
+    // ==================== ZEMIN KONTROLU ====================
+
+    private void CheckGround()
+    {
+        if (currentMode == PlayerMode.Land && groundCheck != null)
+        {
+            isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundRadius, groundLayer);
+        }
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        if (groundCheck != null)
+        {
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(groundCheck.position, groundRadius);
+        }
+    }
+
+    // ==================== HAREKET YÖNETİMİ ====================
 
     /// <summary>
-    /// Yumuşak geçişli (SmoothDamp) hareket uygular.
-    /// Input varsa hızlanır, yoksa yavaşça durur — floaty his verir.
+    /// SmoothDamp destekli 360 derece uçuş/yüzüş hareketi
     /// </summary>
-    private void ApplyMovement()
+    private void HandleWaterMovement()
     {
         Vector2 targetVelocity = inputDirection * moveSpeed;
 
-        // Input var mı yok mu buna göre farklı smoothing uygula
         float smoothTime = (inputDirection.magnitude > 0.1f)
             ? accelerationSmoothing
             : decelerationSmoothing;
 
-        // Velocity'yi hedefe doğru yumuşak şekilde yaklaştır
         currentVelocity = Vector2.SmoothDamp(
             currentVelocity,
             targetVelocity,
@@ -181,10 +273,6 @@ public class PlayerController : MonoBehaviour
         rb.linearVelocity = currentVelocity;
     }
 
-    /// <summary>
-    /// Su direnci simülasyonu — hızı yavaşça azaltır.
-    /// Input yokken daha belirgin bir yavaşlama sağlar.
-    /// </summary>
     private void ApplyWaterDrag()
     {
         if (inputDirection.magnitude < 0.1f)
@@ -193,163 +281,174 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // ==================== DASH ====================
-
     /// <summary>
-    /// Dash yapılabilir mi kontrol eder.
+    /// Katı ve net (velocity) bazlı yatay platformer hareketi
     /// </summary>
-    private bool CanDash()
+    private void HandleLandMovement()
+    {
+        // Karada sadece x ekseni velocity üzerinden etkilenir
+        float targetVelocityX = inputDirection.x * moveSpeed;
+        
+        rb.linearVelocity = new Vector2(targetVelocityX, rb.linearVelocity.y);
+    }
+
+    private void Jump()
+    {
+        // Zıplamada daha keskin bir his için y eksenini sıfırlayıp kuvveti uygula
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
+        rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+    }
+
+    // ==================== DASH (LAND) ====================
+
+    private bool CanLandDash()
+    {
+        return !isLandDashing && landDashCooldownTimer <= 0f;
+    }
+
+    private void StartLandDash()
+    {
+        isLandDashing = true;
+        landDashTimeRemaining = landDashDuration;
+        landDashCooldownTimer = landDashCooldown;
+
+        if (dashTrail != null) dashTrail.emitting = true;
+
+        // Input yoksa baktığı yön, input varsa input yönü (sadece yatay)
+        float dashDir = 0f;
+        if (inputDirection.x != 0) dashDir = Mathf.Sign(inputDirection.x);
+        else dashDir = facingRight ? 1f : -1f;
+
+        rb.linearVelocity = new Vector2(dashDir * landDashForce, rb.linearVelocity.y);
+    }
+
+    private void EndLandDash()
+    {
+        isLandDashing = false;
+        if (dashTrail != null) dashTrail.emitting = false;
+        
+        // Hızı yumuşat
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x * 0.5f, rb.linearVelocity.y);
+    }
+
+    // ==================== DASH (WATER) ====================
+
+    private bool CanWaterDash()
     {
         return !isDashing && dashCooldownTimer <= 0f;
     }
 
-    /// <summary>
-    /// Dash'i başlatır. Yön, mevcut input'a göre belirlenir.
-    /// Input yoksa varsayılan olarak sağa dash atılır.
-    /// </summary>
-    private void StartDash()
+    private void StartWaterDash()
     {
         isDashing = true;
         dashTimeRemaining = dashDuration;
 
-        // Trail efektini aç
         if (dashTrail != null) dashTrail.emitting = true;
 
-        // Dash yönünü belirle
         if (inputDirection.magnitude > 0.1f)
-        {
-            // 8 yönlü dash: input yönüne göre
             dashDirection = GetEightDirectionVector(inputDirection);
-        }
         else
-        {
-            // Input yoksa sağa dash at
-            dashDirection = Vector2.right;
-        }
+            dashDirection = Vector2.right; // varsayılan
     }
 
-    /// <summary>
-    /// Dash sırasında sabit hızda hareket uygular.
-    /// </summary>
-    private void PerformDash()
+    private void PerformWaterDash()
     {
         rb.linearVelocity = dashDirection * dashSpeed;
-
         dashTimeRemaining -= Time.fixedDeltaTime;
 
         if (dashTimeRemaining <= 0f)
         {
-            EndDash();
+            EndWaterDash();
         }
     }
 
-    /// <summary>
-    /// Dash'i bitirir ve cooldown'u başlatır.
-    /// Dash sonrası mevcut hızı korur (momentum devam eder).
-    /// </summary>
-    private void EndDash()
+    private void EndWaterDash()
     {
         isDashing = false;
         dashCooldownTimer = dashCooldown;
 
-        // Trail efektini kapat
         if (dashTrail != null) dashTrail.emitting = false;
 
-        // Dash sonrası velocity'yi currentVelocity'ye aktar
-        // böylece yumuşak geçiş sağlanır
         currentVelocity = rb.linearVelocity * 0.5f;
     }
 
-    /// <summary>
-    /// Zamanlayıcıları günceller (cooldown vb.)
-    /// </summary>
+    // ==================== YARDIMCI METOTLAR ====================
+
     private void UpdateTimers()
     {
-        if (dashCooldownTimer > 0f)
-        {
-            dashCooldownTimer -= Time.deltaTime;
-        }
+        if (dashCooldownTimer > 0f) dashCooldownTimer -= Time.deltaTime;
+        
+        if (landDashCooldownTimer > 0f) landDashCooldownTimer -= Time.deltaTime;
     }
 
-    // ==================== YARDIMCI METODLAR ====================
-
-    /// <summary>
-    /// Verilen input vektörünü en yakın 8 yönden birine çevirir.
-    /// (Yukarı, Aşağı, Sol, Sağ ve 4 çapraz yön)
-    /// </summary>
     private Vector2 GetEightDirectionVector(Vector2 input)
     {
-        // Açıyı hesapla (derece cinsinden)
         float angle = Mathf.Atan2(input.y, input.x) * Mathf.Rad2Deg;
-
-        // En yakın 45 derecelik açıya yuvarla
         float snappedAngle = Mathf.Round(angle / 45f) * 45f;
-
-        // Tekrar vektöre çevir
         float rad = snappedAngle * Mathf.Deg2Rad;
         return new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)).normalized;
     }
 
-    /// <summary>
-    /// Player bir düşmana dash ile çarptığında geri sekmesini sağlar (Bounce).
-    /// </summary>
-    public void ApplyBounce(Vector2 direction, float force)
+    // ==================== KNOCKBACK VE GERİ BİLDİRİMLER ====================
+
+    public void ApplyBounce(Vector2 direction, float force, Vector2 hitPosition)
     {
-        if (isDashing)
-        {
-            EndDash(); // Dash işlemini anında iptal et
-        }
+        if (currentMode == PlayerMode.Water && isDashing) EndWaterDash();
+        if (currentMode == PlayerMode.Land && isLandDashing) EndLandDash();
 
-        // --- JUICE (HİSSİYAT) EKLENTİLERİ ---
-        
-        // 1. Camera Shake (Noise kullanılarak)
-        if (noise != null)
-        {
-            StartCoroutine(ShakeRoutine(1.5f, 0.15f));
-        }
+        if (noise != null) StartCoroutine(ShakeRoutine(1.5f, 0.15f));
 
-        // 2. Parçacık Efekti (Hit Particle)
         if (hitParticlePrefab != null)
         {
-            Instantiate(hitParticlePrefab, transform.position, Quaternion.identity);
+            GameObject particleInstance = Instantiate(hitParticlePrefab, hitPosition, Quaternion.identity);
+            ParticleSystem ps = particleInstance.GetComponent<ParticleSystem>();
+            if (ps != null)
+            {
+                float destroyDelay = ps.main.duration + ps.main.startLifetime.constantMax;
+                Destroy(particleInstance, destroyDelay);
+            }
+            else Destroy(particleInstance, 1f);
         }
 
-        // 3. Hit Stop (Zaman Dondurma - Freeze)
         StartCoroutine(HitStopCoroutine(hitStopDuration));
         
-        // --- FiZİK ETKİSİ ---
-        // Geri sekme kuvvetini uygula
         currentVelocity = direction.normalized * force;
         rb.linearVelocity = currentVelocity;
+        
+        isKnockback = true;
+        knockbackTimer = 0.2f; 
     }
 
-    /// <summary>
-    /// Vuruş hissiyatı için zamanı çok kısa bir süreliğine dondurup çözer.
-    /// </summary>
+    public void ApplyKnockback(Vector2 direction, float force, float duration)
+    {
+        if (currentMode == PlayerMode.Water && isDashing) EndWaterDash();
+        if (currentMode == PlayerMode.Land && isLandDashing) EndLandDash();
+
+        if (rb != null)
+        {
+            rb.linearVelocity = direction.normalized * force;
+            currentVelocity = rb.linearVelocity;
+        }
+
+        isKnockback = true;
+        knockbackTimer = duration;
+
+        if (noise != null) StartCoroutine(ShakeRoutine(3f, 0.2f)); 
+    }
+
     private IEnumerator HitStopCoroutine(float duration)
     {
-        // Zamanı dondur (fizikler, update'ler bekler)
         Time.timeScale = 0f;
-        
-        // timeScale = 0 olduğunda beklemenin devam etmesi için Realtime kullanılır:
         yield return new WaitForSecondsRealtime(duration);
-        
-        // Zamanı eski haline getir
         Time.timeScale = 1f;
     }
 
-    /// <summary>
-    /// Kameranın BasicMultiChannelPerlin Noise değerini değiştirerek sallanmasını sağlar.
-    /// </summary>
     private IEnumerator ShakeRoutine(float intensity, float time)
     {
         if (noise != null)
         {
             noise.AmplitudeGain = intensity;
-            
-            // HitStop yüzünden zaman donuk olursa diye Realtime bekleme
             yield return new WaitForSecondsRealtime(time);
-            
             noise.AmplitudeGain = 0f;
         }
     }

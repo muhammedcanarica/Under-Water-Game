@@ -1,15 +1,25 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
-/// Basit düşman scripti.
+/// Basit, temiz ve modüler düşman hareket scripti.
 /// Belirlenen minX ve maxX arasında devriye gezer (Patrol).
-/// Oyuncu dash atarak çarptığında hasar alır ve oyuncuyu geri sektirir.
+/// Oyuncu ile çarpışmalarını (bounce) yönetir. Sağlık sistemi EnemyHealth içerisindedir.
 /// </summary>
 public class EnemyController : MonoBehaviour
 {
-    [Header("Sağlık Sistemi")]
-    [Tooltip("Düşmanın canı")]
-    public int health = 3;
+    // ==========================================
+    // DEĞİŞKENLER
+    // ==========================================
+
+    [Header("Enemy Combat Ayarları")]
+    [Tooltip("Oyuncuya değdiğinde vereceği hasar miktarı")]
+    public int damageToPlayer = 1;
+
+    [Tooltip("Oyuncuya hasar verdiğinde onu ne kadar uzağa geri fırlatacak?")]
+    public float hitKnockbackForce = 6f;
+
+    [Tooltip("Oyuncu bu düşmana dash atarak çarptığında ne kadar geri sekecek?")]
+    public float bounceForce = 15f;
 
     [Header("Patrol (Devriye) Ayarları")]
     [Tooltip("Düşmanın devriye atma hızı")]
@@ -25,29 +35,35 @@ public class EnemyController : MonoBehaviour
     [Tooltip("Sağ devriye sınırı (Dünya X koordinatı)")]
     public float maxX = 5f;
 
-    [Header("Çarpışma (Bounce) Ayarları")]
-    [Tooltip("Oyuncu bu düşmana dash atarak çarptığında ne kadar geri sekecek?")]
-    public float bounceForce = 15f;
-
-    // Referans
+    // Referans ve Durum
     private Rigidbody2D rb;
-
-    // Durum
     private bool movingRight = true;
     private Vector2 currentVelocity;
     private Vector2 velocityRef;
+    private EnemyHealth enemyHealth;
+
+    // Hit-Stun Durumu (Knockback esnasında Patrol durdurulur)
+    private bool isKnockback;
+    private float knockbackTimer = 0f;
+
+    // ==========================================
+    // UNITY YAŞAM DÖNGÜSÜ
+    // ==========================================
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        enemyHealth = GetComponent<EnemyHealth>();
     }
 
     private void Start()
     {
-        // Su altı hissi için yerçekimini ve varsayılan sürtünmeyi kapat (Player ile aynı)
-        rb.gravityScale = 0f;
-        rb.linearDamping = 0f;
-        rb.angularDamping = 0f;
+        if (rb != null)
+        {
+            rb.gravityScale = 0f;
+            rb.linearDamping = 0f;
+            rb.angularDamping = 0f;
+        }
 
         // Başlangıçta X pozisyonunu sınırların içine al
         float clampedX = Mathf.Clamp(transform.position.x, minX, maxX);
@@ -56,30 +72,45 @@ public class EnemyController : MonoBehaviour
 
     private void FixedUpdate()
     {
-        Patrol();
+        if (isKnockback)
+        {
+            knockbackTimer -= Time.fixedDeltaTime;
+            if (knockbackTimer <= 0f) isKnockback = false;
+            return;
+        }
+
+        if (rb != null)
+        {
+            Patrol();
+        }
     }
 
-    /// <summary>
-    /// Düşmanı minX ve maxX sınırları arasında yumuşak bir şekilde hareket ettirir.
-    /// </summary>
+    public void ApplyHitStun(float duration)
+    {
+        isKnockback = true;
+        knockbackTimer = duration;
+    }
+
+    // ==========================================
+    // PATROL (DEVRİYE HAREKETİ)
+    // ==========================================
+
     private void Patrol()
     {
-        // Sağ sınıra ulaştıysa yön değiştir
+        // Sınırlara ulaşınca dön
         if (movingRight && transform.position.x >= maxX)
         {
             FlipDirection();
         }
-        // Sol sınıra ulaştıysa yön değiştir
         else if (!movingRight && transform.position.x <= minX)
         {
             FlipDirection();
         }
 
-        // Hedefe göre hızı belirle
+        // Rigidbody üzerinden Velocity ataması
         float targetVelocityX = movingRight ? moveSpeed : -moveSpeed;
         Vector2 targetVelocity = new Vector2(targetVelocityX, 0f);
         
-        // Velocity'yi hedefe doğru yumuşak şekilde yaklaştır (floaty hissi)
         currentVelocity = Vector2.SmoothDamp(
             currentVelocity,
             targetVelocity,
@@ -90,60 +121,52 @@ public class EnemyController : MonoBehaviour
         rb.linearVelocity = currentVelocity;
     }
 
-    /// <summary>
-    /// Hareket yönünü ve görseli (sprite) tersine çevirir.
-    /// </summary>
     private void FlipDirection()
     {
         movingRight = !movingRight;
-
-        // Karakterin baktığı yönü döndür (Scale X'i ters çevirerek)
         Vector3 newScale = transform.localScale;
         newScale.x *= -1;
         transform.localScale = newScale;
     }
 
-    /// <summary>
-    /// Hasar alma fonksiyonu. Can sıfırlandığında düşmanı yok eder.
-    /// </summary>
-    public void TakeDamage(int amount)
-    {
-        health -= amount;
+    // ==========================================
+    // ÇARPIŞMA KONTROLÜ (ON COLLISION ENTER)
+    // ==========================================
 
-        if (health <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void Die()
-    {
-        // Ölüm efektleri (Particle, ses vs.) eklenebilir.
-        Destroy(gameObject);
-    }
-
-    /// <summary>
-    /// Çarpışmaları (Collision) kontrol eder. 
-    /// Player 'dash' ile çarparsa hasar alır ve player'ı geri sektirir.
-    /// </summary>
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        // Sadece Player etiketi olan objeler ile etkileşime gir
         if (collision.gameObject.CompareTag("Player"))
         {
-            PlayerController player = collision.gameObject.GetComponent<PlayerController>();
+            PlayerController playerController = collision.gameObject.GetComponent<PlayerController>();
+            if (playerController == null) return;
 
-            // Eğer PlayerController varsa ve karakter Dash yapıyorsa
-            if (player != null && player.IsDashing)
+            // DURUM 1: Player Dash Atıyor (Enemy hasar alır, Player seker)
+            if (playerController.IsDashing)
             {
-                // Düşman hasar alır
-                TakeDamage(1);
+                if (enemyHealth != null)
+                {
+                    enemyHealth.TakeDamage(1, collision.transform.position);
+                }
 
-                // Geri sekme yönünü hesapla
-                // Yön: Player'ın pozisyonu - Düşmanın pozisyonu (yani player'ı düşmandan uzaklaşacak yöne doğru itiyoruz)
+                // Geri sekme yönünü hesapla (Player'ı, düştüğü çarpışma açısından ters itiyoruz)
                 Vector2 bounceDirection = (collision.transform.position - transform.position).normalized;
+                Vector2 contactPoint = collision.GetContact(0).point;
+
+                playerController.ApplyBounce(bounceDirection, bounceForce, contactPoint);
+            }
+            // DURUM 2: Player Dash Atmıyor (Player hasar alır ve geriye seker)
+            else
+            {
+                PlayerHealth playerHealth = collision.gameObject.GetComponent<PlayerHealth>();
                 
-                // Oyuncuyu belirtilen kuvvet ile geri sektir (bounce)
-                player.ApplyBounce(bounceDirection, bounceForce);
+                if (playerHealth != null)
+                {
+                    Vector2 knockbackDir = (collision.transform.position - transform.position).normalized;
+                    playerController.ApplyKnockback(knockbackDir, hitKnockbackForce, 0.15f);
+                    
+                    playerHealth.TakeDamage(damageToPlayer, transform);
+                }
             }
         }
     }
