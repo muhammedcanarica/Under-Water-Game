@@ -35,8 +35,15 @@ public class EnemyController : MonoBehaviour
     [Tooltip("Sağ devriye sınırı (Dünya X koordinatı)")]
     public float maxX = 5f;
 
+    [Header("Stun Feedback")]
+    public Color stunFlashColor = new Color(1f, 1f, 0.6f, 1f);
+    public float stunFlashSpeed = 18f;
+    public float stunShakeAmount = 0.03f;
+    public float stunShakeSpeed = 30f;
+
     // Referans ve Durum
     private Rigidbody2D rb;
+    private SpriteRenderer spriteRenderer;
     private bool movingRight = true;
     private Vector2 currentVelocity;
     private Vector2 velocityRef;
@@ -45,6 +52,13 @@ public class EnemyController : MonoBehaviour
     // Hit-Stun Durumu (Knockback esnasında Patrol durdurulur)
     private bool isKnockback;
     private float knockbackTimer = 0f;
+    public bool isStunned;
+    public bool IsStunned => isStunned;
+    private float stunTimer = 0f;
+    public float stunImmunityDuration = 0.5f;
+    private float stunImmunityTimer = 0f;
+    private Color baseSpriteColor = Color.white;
+    private Vector3 currentShakeOffset = Vector3.zero;
 
     // ==========================================
     // UNITY YAŞAM DÖNGÜSÜ
@@ -53,7 +67,13 @@ public class EnemyController : MonoBehaviour
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        spriteRenderer = GetComponent<SpriteRenderer>();
         enemyHealth = GetComponent<EnemyHealth>();
+
+        if (spriteRenderer != null)
+        {
+            baseSpriteColor = spriteRenderer.color;
+        }
     }
 
     private void Start()
@@ -72,6 +92,27 @@ public class EnemyController : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (stunImmunityTimer > 0f)
+        {
+            stunImmunityTimer -= Time.fixedDeltaTime;
+        }
+
+        if (isStunned)
+        {
+            stunTimer -= Time.fixedDeltaTime;
+            if (stunTimer <= 0f)
+            {
+                isStunned = false;
+            }
+
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector2.zero;
+            }
+
+            return;
+        }
+
         if (isKnockback)
         {
             knockbackTimer -= Time.fixedDeltaTime;
@@ -85,10 +126,61 @@ public class EnemyController : MonoBehaviour
         }
     }
 
+    private void LateUpdate()
+    {
+        UpdateStunVisuals();
+    }
+
     public void ApplyHitStun(float duration)
     {
         isKnockback = true;
         knockbackTimer = duration;
+    }
+
+    public bool TryApplyStun(float duration)
+    {
+        if (isStunned || stunImmunityTimer > 0f)
+            return false;
+
+        isStunned = true;
+        stunTimer = duration;
+        stunImmunityTimer = duration + stunImmunityDuration;
+
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+        }
+
+        return true;
+    }
+
+    private void UpdateStunVisuals()
+    {
+        if (spriteRenderer == null)
+            return;
+
+        if (!isStunned)
+        {
+            if (currentShakeOffset != Vector3.zero)
+            {
+                transform.position -= currentShakeOffset;
+                currentShakeOffset = Vector3.zero;
+            }
+
+            spriteRenderer.color = baseSpriteColor;
+            return;
+        }
+
+        float flashLerp = Mathf.PingPong(Time.unscaledTime * stunFlashSpeed, 1f);
+        spriteRenderer.color = Color.Lerp(baseSpriteColor, stunFlashColor, flashLerp);
+
+        Vector3 nextShakeOffset = new Vector3(
+            Mathf.Sin(Time.unscaledTime * stunShakeSpeed) * stunShakeAmount,
+            Mathf.Cos(Time.unscaledTime * (stunShakeSpeed * 0.7f)) * stunShakeAmount * 0.5f,
+            0f);
+
+        transform.position += nextShakeOffset - currentShakeOffset;
+        currentShakeOffset = nextShakeOffset;
     }
 
     // ==========================================

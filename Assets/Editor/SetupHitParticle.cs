@@ -75,10 +75,19 @@ public static class SetupHitParticle
         // ============================================================
         var vel = ps.velocityOverLifetime;
         vel.enabled = true;
-        // Hafif yukarı sürükleme (su kabarcığı hissi)
-        vel.y = new ParticleSystem.MinMaxCurve(0.3f, 0.8f);
-        // Yanlara hafif sallanma
-        vel.x = new ParticleSystem.MinMaxCurve(-0.2f, 0.2f);
+        
+        ParticleSystem.MinMaxCurve curveX = new ParticleSystem.MinMaxCurve(-0.2f, 0.2f);
+        ParticleSystem.MinMaxCurve curveY = new ParticleSystem.MinMaxCurve(0.3f, 0.8f);
+        ParticleSystem.MinMaxCurve curveZ = new ParticleSystem.MinMaxCurve(0f, 0f);
+
+        curveX.mode = ParticleSystemCurveMode.TwoConstants;
+        curveY.mode = ParticleSystemCurveMode.TwoConstants;
+        curveZ.mode = ParticleSystemCurveMode.TwoConstants;
+
+        vel.x = curveX;
+        vel.y = curveY;
+        vel.z = curveZ;
+
         // Hızı zamanla yavaşlat (drag)
         var speedMod = ps.limitVelocityOverLifetime;
         speedMod.enabled = true;

@@ -1,55 +1,52 @@
 using UnityEngine;
 
-/// <summary>
-/// Hareket sırasında Particle System'ı kontrol eder.
-/// Player hareket ediyorsa emit açılır, durunca kapanır.
-/// PlayerController'ın child'ına eklenmiş Particle System'da kullanılır.
-/// </summary>
 public class MovementParticleController : MonoBehaviour
 {
     [Header("Referanslar")]
-    [Tooltip("Player'ın Rigidbody2D'si (otomatik bulunur)")]
+    [Tooltip("Player Rigidbody2D")]
     public Rigidbody2D playerRb;
 
-    [Tooltip("Kontrol edilecek ParticleSystem (otomatik bulunur)")]
+    [Tooltip("Kontrol edilecek ParticleSystem")]
     public ParticleSystem movementParticles;
 
+    [Tooltip("PlayerController referansi")]
+    public PlayerController playerController;
+
     [Header("Ayarlar")]
-    [Tooltip("Bu hızın altında particle üretilmez")]
+    [Tooltip("Bu hizin altinda particle uretilmez")]
     public float minSpeedThreshold = 0.3f;
 
-    // Önbellek
     private ParticleSystem.EmissionModule emissionModule;
     private bool isEmitting;
 
     private void Awake()
     {
-        // Particle System referansını al
         if (movementParticles == null)
             movementParticles = GetComponent<ParticleSystem>();
 
-        // Player'ın Rigidbody'sini bul (parent'tan)
         if (playerRb == null)
             playerRb = GetComponentInParent<Rigidbody2D>();
 
-        // Emission modülünü önbelleğe al
+        if (playerController == null)
+            playerController = GetComponentInParent<PlayerController>();
+
         if (movementParticles != null)
         {
             emissionModule = movementParticles.emission;
-            emissionModule.enabled = false; // Başlangıçta kapalı
+            emissionModule.enabled = false;
             isEmitting = false;
         }
     }
 
     private void Update()
     {
-        if (playerRb == null || movementParticles == null)
+        if (playerRb == null || movementParticles == null || playerController == null)
             return;
 
         float speed = playerRb.linearVelocity.magnitude;
-        bool shouldEmit = speed > minSpeedThreshold;
+        bool isInWater = playerController.currentMode == PlayerMode.Water;
+        bool shouldEmit = isInWater && speed > minSpeedThreshold;
 
-        // Sadece durum değiştiğinde çağır (performans)
         if (shouldEmit && !isEmitting)
         {
             emissionModule.enabled = true;
