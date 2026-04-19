@@ -91,7 +91,8 @@ public class PlayerController : MonoBehaviour
 
     public void ApplyModeProperties(PlayerMode mode, bool forceInitialize = false)
     {
-        dash.CancelActiveDash();
+        bool exitingWater = currentMode == PlayerMode.Water && mode == PlayerMode.Land;
+        dash.CancelActiveDash(preserveMomentum: exitingWater);
         movement.SetMode(mode, forceInitialize);
         UpdateLocomotionState();
     }

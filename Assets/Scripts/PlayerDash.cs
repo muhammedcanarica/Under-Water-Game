@@ -109,14 +109,31 @@ public class PlayerDash : MonoBehaviour
         }
     }
 
-    public void CancelActiveDash()
+    public void CancelActiveDash(bool preserveMomentum = false)
     {
         if (!IsDashing)
         {
             return;
         }
 
-        StopDash();
+        activeDashTimer = 0f;
+
+        if (!preserveMomentum)
+        {
+            ApplyStopDashVelocity();
+        }
+    }
+
+    private void ApplyStopDashVelocity()
+    {
+        if (activeDashMode == PlayerMode.Water)
+        {
+            rb.linearVelocity *= 0.5f;
+        }
+        else
+        {
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x * landDashExitVelocityMultiplier, rb.linearVelocity.y);
+        }
     }
 
     private bool CanStartDash(PlayerMode mode)
@@ -148,14 +165,6 @@ public class PlayerDash : MonoBehaviour
     private void StopDash()
     {
         activeDashTimer = 0f;
-
-        if (activeDashMode == PlayerMode.Water)
-        {
-            rb.linearVelocity *= 0.5f;
-        }
-        else
-        {
-            rb.linearVelocity = new Vector2(rb.linearVelocity.x * landDashExitVelocityMultiplier, rb.linearVelocity.y);
-        }
+        ApplyStopDashVelocity();
     }
 }

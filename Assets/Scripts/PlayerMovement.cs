@@ -13,6 +13,12 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float maxWaterVerticalSpeed = 12f;
     [SerializeField] private float groundCheckGraceDuration = 0.15f;
 
+    [Header("Water Exit")]
+    [Tooltip("Sudan çıkışta yukarı hız sıfıra yakınsa verilecek minimum yukarı itme")]
+    [SerializeField] private float waterExitMinBoost = 3f;
+    [Tooltip("Sudan çıkış sonrası yerçekimi yumuşak geçiş hızı (düşük = daha yavaş yerçekimi dönüşü)")]
+    [SerializeField] private float waterExitGravityBlendSpeed = 4f;
+
     [Header("Water Movement")]
     [SerializeField] private float waterMoveSpeed = 5f;
     [SerializeField] private float waterAccelerationTime = 0.12f;
@@ -31,15 +37,23 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float groundCheckRadius = 0.2f;
     [SerializeField] private LayerMask groundLayer = 1 << 6;
 
+    [Header("Fall Speed Limit")]
+    [SerializeField] private float maxFallSpeed = 10f;
+
     private Rigidbody2D rb;
     private PlayerStateMachine stateMachine;
     private Vector2 waterVelocitySmoothing;
     private float landVelocitySmoothing;
     private float targetGravityScale;
+    private float targetDrag;
     private float modeTransitionTimer;
     private float groundCheckGraceTimer;
     private bool isGrounded;
     private bool facingRight = true;
+
+    /// <summary>True while gravity is slowly blending back after a water exit.</summary>
+    private bool isWaterExitTransition;
+    private float waterExitGravityTimer;
 
     public PlayerMode StartingMode => startingMode;
     public Rigidbody2D Body => rb;
@@ -88,23 +102,60 @@ public class PlayerMovement : MonoBehaviour
 
         stateMachine.SetMode(mode, forceInitialize);
 
+        // --- Water → Land geçişi ---
+        bool isWaterToLand = previousMode == PlayerMode.Water && mode == PlayerMode.Land && !forceInitialize;
+
         float preservedVerticalVelocity = rb.linearVelocity.y;
-        if (!forceInitialize &&
-            previousMode == PlayerMode.Water &&
-            mode == PlayerMode.Land &&
-            preservedVerticalVelocity > 0f)
+        if (isWaterToLand)
         {
+            // Aşağı hızı sıfırla — sudan çıkınca düşmesin
+            if (preservedVerticalVelocity < 0f)
+                preservedVerticalVelocity = 0f;
+
+            // Yukarı hız çok düşükse minimum boost ver
+            if (preservedVerticalVelocity < waterExitMinBoost)
+                preservedVerticalVelocity = waterExitMinBoost;
+
+            // Çapraz çıkışlarda dikey hız (0.707 * waterMoveSpeed) düz çıkışa göre yarı yarıya daha az zıplama sağlar.
+            // Bunu engellemek ve havada "düşme" hissini kırmak için dikey hızı garanti altına alıyoruz.
+            if (preservedVerticalVelocity > 0.1f)
+            {
+                float guaranteedBoost = waterMoveSpeed * 0.85f;
+                if (preservedVerticalVelocity < guaranteedBoost)
+                {
+                    preservedVerticalVelocity = guaranteedBoost;
+                }
+            }
+
             preservedVerticalVelocity = Mathf.Min(preservedVerticalVelocity, maxWaterExitVerticalSpeed);
             groundCheckGraceTimer = groundCheckGraceDuration;
+
+            // Yavaş yerçekimi geçişi başlat
+            isWaterExitTransition = true;
+            waterExitGravityTimer = 0f;
         }
         else if (mode == PlayerMode.Water)
         {
             groundCheckGraceTimer = 0f;
+            isWaterExitTransition = false;
         }
 
         targetGravityScale = mode == PlayerMode.Water ? 0f : landGravityScale;
-        rb.gravityScale = forceInitialize ? targetGravityScale : rb.gravityScale;
-        rb.linearDamping = mode == PlayerMode.Water ? waterLinearDamping : 0f;
+        targetDrag = mode == PlayerMode.Water ? waterLinearDamping : 0f;
+
+        if (forceInitialize && !isWaterToLand)
+        {
+            rb.gravityScale = targetGravityScale;
+            rb.linearDamping = targetDrag;
+        }
+        else if (isWaterToLand)
+        {
+            // Sudan çıkışta yerçekimini sıfırdan başlat — FixedPrepare'da yavaşça artacak
+            rb.gravityScale = 0f;
+            rb.linearDamping = 0f;
+        }
+        // Smooth transition: gravity ve drag FixedPrepare'da lerp edilecek
+
         rb.linearVelocity = new Vector2(rb.linearVelocity.x, preservedVerticalVelocity);
         modeTransitionTimer = forceInitialize ? 0f : modeTransitionDuration;
         isGrounded = false;
@@ -122,7 +173,30 @@ public class PlayerMovement : MonoBehaviour
             groundCheckGraceTimer -= Time.fixedDeltaTime;
         }
 
-        rb.gravityScale = Mathf.Lerp(rb.gravityScale, targetGravityScale, gravityBlendSpeed * Time.fixedDeltaTime);
+        // --- D) Smooth transition: gravity ve drag yumuşak geçiş ---
+        float currentGravityBlendSpeed = gravityBlendSpeed;
+
+        if (isWaterExitTransition)
+        {
+            waterExitGravityTimer += Time.fixedDeltaTime;
+            // Çıkışta daha yavaş bir yerçekimi dönüşümü kullan ki hemen düşmesin
+            currentGravityBlendSpeed = waterExitGravityBlendSpeed;
+
+            if (Mathf.Abs(rb.gravityScale - targetGravityScale) < 0.1f || waterExitGravityTimer > 1f)
+            {
+                isWaterExitTransition = false;
+            }
+        }
+
+        rb.gravityScale = Mathf.Lerp(rb.gravityScale, targetGravityScale, currentGravityBlendSpeed * Time.fixedDeltaTime);
+        rb.linearDamping = Mathf.Lerp(rb.linearDamping, targetDrag, currentGravityBlendSpeed * Time.fixedDeltaTime);
+
+        // --- E) Düşme hızını sınırla — ani düşmeyi önle ---
+        if (rb.linearVelocity.y < -maxFallSpeed)
+        {
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, -maxFallSpeed);
+        }
+
         UpdateGroundedState(suppressGroundCheck);
     }
 

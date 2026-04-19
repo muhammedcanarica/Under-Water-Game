@@ -8,7 +8,7 @@ public class CurrentZone : MonoBehaviour
     public Vector2 direction = Vector2.right;
 
     [Tooltip("Akıntı kuvveti (2-10 arası önerilir)")]
-    [Range(1f, 100f)]
+    [Range(1f, 10000f)]
     public float force = 5f;
 
     [Header("Görsel")]
