@@ -5,6 +5,8 @@ using UnityEngine;
 [RequireComponent(typeof(PlayerStateMachine))]
 public class PlayerMovement : MonoBehaviour
 {
+    private static PhysicsMaterial2D frictionlessMaterial;
+
     [Header("Mode")]
     [SerializeField] private PlayerMode startingMode = PlayerMode.Water;
     [SerializeField] private float modeTransitionDuration = 0.15f;
@@ -31,23 +33,25 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float landDecelerationTime = 0.05f;
     [SerializeField] private float landGravityScale = 3f;
     [SerializeField] private float jumpForce = 12f;
+    [SerializeField] private float jumpCooldown = 0.2f;
 
     [Header("Ground Check")]
     [SerializeField] private Transform groundCheck;
     [SerializeField] private float groundCheckRadius = 0.2f;
-    [SerializeField] private LayerMask groundLayer = 1 << 6;
+    [SerializeField] private LayerMask groundLayer = (1 << 0) | (1 << 6);
 
     [Header("Fall Speed Limit")]
     [SerializeField] private float maxFallSpeed = 10f;
 
     private Rigidbody2D rb;
+    private Collider2D[] colliders;
     private PlayerStateMachine stateMachine;
     private Vector2 waterVelocitySmoothing;
-    private float landVelocitySmoothing;
     private float targetGravityScale;
     private float targetDrag;
     private float modeTransitionTimer;
     private float groundCheckGraceTimer;
+    private float jumpCooldownTimer;
     private bool isGrounded;
     private bool facingRight = true;
 
@@ -61,13 +65,18 @@ public class PlayerMovement : MonoBehaviour
     public bool CanJump => stateMachine != null &&
                            stateMachine.CurrentMode == PlayerMode.Land &&
                            isGrounded &&
+                           jumpCooldownTimer <= 0f &&
                            modeTransitionTimer <= 0f;
     public Vector2 FacingDirection => facingRight ? Vector2.right : Vector2.left;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        colliders = GetComponents<Collider2D>();
         stateMachine = GetComponent<PlayerStateMachine>();
+        EnsureGroundLayerMask();
+        ConfigureBodyForSmoothMotion();
+        ConfigureContactMaterials();
 
         if (groundCheck == null)
         {
@@ -83,6 +92,10 @@ public class PlayerMovement : MonoBehaviour
     {
         stateMachine = machine;
         rb = rb != null ? rb : GetComponent<Rigidbody2D>();
+        colliders = colliders != null && colliders.Length > 0 ? colliders : GetComponents<Collider2D>();
+        EnsureGroundLayerMask();
+        ConfigureBodyForSmoothMotion();
+        ConfigureContactMaterials();
 
         SetMode(startingMode, true);
     }
@@ -142,6 +155,7 @@ public class PlayerMovement : MonoBehaviour
 
         targetGravityScale = mode == PlayerMode.Water ? 0f : landGravityScale;
         targetDrag = mode == PlayerMode.Water ? waterLinearDamping : 0f;
+        ResetLandMovementState();
 
         if (forceInitialize && !isWaterToLand)
         {
@@ -171,6 +185,11 @@ public class PlayerMovement : MonoBehaviour
         if (groundCheckGraceTimer > 0f)
         {
             groundCheckGraceTimer -= Time.fixedDeltaTime;
+        }
+
+        if (jumpCooldownTimer > 0f)
+        {
+            jumpCooldownTimer -= Time.fixedDeltaTime;
         }
 
         // --- D) Smooth transition: gravity ve drag yumuşak geçiş ---
@@ -204,13 +223,13 @@ public class PlayerMovement : MonoBehaviour
     {
         SetFacingFromDirection(moveInput.x);
 
-        if (modeTransitionTimer > 0f)
-        {
-            return;
-        }
-
         if (stateMachine.CurrentMode == PlayerMode.Water)
         {
+            if (modeTransitionTimer > 0f)
+            {
+                return;
+            }
+
             ApplyWaterMovement(moveInput);
             return;
         }
@@ -227,6 +246,7 @@ public class PlayerMovement : MonoBehaviour
 
         rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
         rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+        jumpCooldownTimer = jumpCooldown;
         isGrounded = false;
     }
 
@@ -279,17 +299,16 @@ public class PlayerMovement : MonoBehaviour
     private void ApplyLandMovement(float horizontalInput)
     {
         float targetVelocityX = horizontalInput * landMoveSpeed;
-        float smoothTime = Mathf.Abs(horizontalInput) > 0.0001f
+        float accelerationTime = Mathf.Abs(horizontalInput) > 0.0001f
             ? landAccelerationTime
             : landDecelerationTime;
-
-        float nextVelocityX = Mathf.SmoothDamp(
+        float acceleration = accelerationTime > 0.0001f
+            ? landMoveSpeed / accelerationTime
+            : float.PositiveInfinity;
+        float nextVelocityX = Mathf.MoveTowards(
             rb.linearVelocity.x,
             targetVelocityX,
-            ref landVelocitySmoothing,
-            smoothTime,
-            Mathf.Infinity,
-            Time.fixedDeltaTime);
+            acceleration * Time.fixedDeltaTime);
 
         rb.linearVelocity = new Vector2(nextVelocityX, rb.linearVelocity.y);
     }
@@ -320,5 +339,66 @@ public class PlayerMovement : MonoBehaviour
 
         Gizmos.color = Color.cyan;
         Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+    }
+
+    private void OnValidate()
+    {
+        EnsureGroundLayerMask();
+    }
+
+    private void EnsureGroundLayerMask()
+    {
+        const int defaultLayer = 1 << 0;
+        const int groundPhysicsLayer = 1 << 6;
+
+        if ((groundLayer.value & groundPhysicsLayer) != 0)
+        {
+            groundLayer |= defaultLayer;
+        }
+    }
+
+    private void ConfigureBodyForSmoothMotion()
+    {
+        if (rb == null)
+        {
+            return;
+        }
+
+        rb.interpolation = RigidbodyInterpolation2D.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+        rb.sleepMode = RigidbodySleepMode2D.NeverSleep;
+    }
+
+    private void ResetLandMovementState()
+    {
+        waterVelocitySmoothing = Vector2.zero;
+    }
+
+    private void ConfigureContactMaterials()
+    {
+        if (colliders == null || colliders.Length == 0)
+        {
+            return;
+        }
+
+        if (frictionlessMaterial == null)
+        {
+            frictionlessMaterial = new PhysicsMaterial2D("PlayerFrictionless")
+            {
+                friction = 0f,
+                bounciness = 0f
+            };
+        }
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider2D currentCollider = colliders[i];
+            if (currentCollider == null || currentCollider.isTrigger)
+            {
+                continue;
+            }
+
+            currentCollider.sharedMaterial = frictionlessMaterial;
+        }
     }
 }

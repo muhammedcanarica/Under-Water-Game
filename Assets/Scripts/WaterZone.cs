@@ -4,6 +4,8 @@ using System.Collections.Generic;
 [RequireComponent(typeof(BoxCollider2D))]
 public class WaterZone : MonoBehaviour
 {
+    private const string RuntimeVisualName = "WaterVisual";
+
     [Header("Splash Ayarlari")]
     [SerializeField] private bool spawnSplashOnTransition = true;
     [SerializeField] private int splashBurstMin = 10;
@@ -36,6 +38,7 @@ public class WaterZone : MonoBehaviour
 
     [Header("Optional Elements")]
     [SerializeField] private ParticleSystem bubbleParticles;
+    [SerializeField] private SpriteRenderer visualRenderer;
 
     private SpriteRenderer waterSpriteRenderer;
     private BoxCollider2D waterCollider;
@@ -98,6 +101,7 @@ public class WaterZone : MonoBehaviour
         }
 
         SetupWaterVisuals();
+        SyncWaterVisualsToCollider();
 
         if (bubbleParticles != null)
         {
@@ -153,17 +157,15 @@ public class WaterZone : MonoBehaviour
             if (!hasBounds) playerBounds = colliders[0].bounds; // Fallback to first if all are triggers
 
             float playerBottom = playerBounds.min.y;
+            float playerTop = playerBounds.max.y;
             float playerLeft = playerBounds.min.x;
             float playerRight = playerBounds.max.x;
 
-            float tolerance = 0.2f;
-            
-            // Su içinde sayılması için hem alt kısmının su yüzeyinin (toleranslı) altında olması
-            // hem de yatayda suyun sınırları içinde olması gerekir
-            bool isVerticallyInWater = playerBottom <= waterTop - tolerance;
             bool isHorizontallyInWater = playerRight >= waterLeft && playerLeft <= waterRight;
+            bool shouldStayInWater = isHorizontallyInWater && playerBottom <= waterTop + surfaceExitBuffer;
+            bool shouldForceExit = playerBottom >= waterTop + safetyExitMargin;
 
-            if (isVerticallyInWater && isHorizontallyInWater)
+            if (shouldStayInWater && !shouldForceExit)
             {
                 PlayerController pc = playerRb.GetComponent<PlayerController>();
                 if (pc != null && pc.currentMode != PlayerMode.Water)
@@ -177,7 +179,13 @@ public class WaterZone : MonoBehaviour
             else
             {
                 PlayerController player = playerRb.GetComponent<PlayerController>();
-                if (player != null && player.currentMode == PlayerMode.Water)
+                bool fullyAboveSurface = playerBottom > waterTop + surfaceExitBuffer;
+                bool lostHorizontalOverlap = !isHorizontallyInWater;
+                bool completelyClearedSurface = playerTop > waterTop + safetyExitMargin;
+
+                if (player != null &&
+                    player.currentMode == PlayerMode.Water &&
+                    (fullyAboveSurface || lostHorizontalOverlap || shouldForceExit || completelyClearedSurface))
                 {
                     if (spawnSplashOnTransition)
                         SpawnSplashEffect(new Vector3(playerRb.transform.position.x, waterTop, 0f), playerRb.linearVelocity);
@@ -245,9 +253,7 @@ public class WaterZone : MonoBehaviour
 
     private void SetupWaterVisuals()
     {
-        waterSpriteRenderer = GetComponent<SpriteRenderer>();
-        if (waterSpriteRenderer == null)
-            waterSpriteRenderer = gameObject.AddComponent<SpriteRenderer>();
+        waterSpriteRenderer = ResolveVisualRenderer();
 
         if (waterSpriteRenderer.sprite == null)
         {
@@ -267,14 +273,13 @@ public class WaterZone : MonoBehaviour
 
         waterSpriteRenderer.drawMode = SpriteDrawMode.Sliced;
         waterSpriteRenderer.color = waterColor;
-        waterSpriteRenderer.size = waterCollider.size;
         waterSpriteRenderer.sortingOrder = 10;
     }
 
     private void OnValidate()
     {
         if (waterCollider == null) waterCollider = GetComponent<BoxCollider2D>();
-        if (waterSpriteRenderer == null) waterSpriteRenderer = GetComponent<SpriteRenderer>();
+        waterSpriteRenderer = ResolveVisualRenderer();
 
         if (waterCollider != null && waterSpriteRenderer != null)
         {
@@ -282,13 +287,61 @@ public class WaterZone : MonoBehaviour
             UnityEditor.EditorApplication.delayCall += () =>
             {
                 if (this == null) return;
-                waterSpriteRenderer.size = waterCollider.size;
-                waterSpriteRenderer.color = waterColor;
+                SyncWaterVisualsToCollider();
             };
 #else
-            waterSpriteRenderer.size = waterCollider.size;
-            waterSpriteRenderer.color = waterColor;
+            SyncWaterVisualsToCollider();
 #endif
+        }
+    }
+
+    private SpriteRenderer ResolveVisualRenderer()
+    {
+        if (visualRenderer != null)
+        {
+            return visualRenderer;
+        }
+
+        SpriteRenderer childRenderer = transform.Find(RuntimeVisualName)?.GetComponent<SpriteRenderer>();
+        if (childRenderer != null)
+        {
+            visualRenderer = childRenderer;
+            return visualRenderer;
+        }
+
+        SpriteRenderer sameObjectRenderer = GetComponent<SpriteRenderer>();
+        if (sameObjectRenderer != null && waterCollider != null && waterCollider.offset == Vector2.zero)
+        {
+            visualRenderer = sameObjectRenderer;
+            return visualRenderer;
+        }
+
+        GameObject visualObject = new GameObject(RuntimeVisualName);
+        visualObject.transform.SetParent(transform, false);
+        visualRenderer = visualObject.AddComponent<SpriteRenderer>();
+        return visualRenderer;
+    }
+
+    private void SyncWaterVisualsToCollider()
+    {
+        if (waterCollider == null || waterSpriteRenderer == null)
+        {
+            return;
+        }
+
+        waterSpriteRenderer.color = waterColor;
+        waterSpriteRenderer.size = waterCollider.size;
+        waterSpriteRenderer.transform.localPosition = new Vector3(waterCollider.offset.x, waterCollider.offset.y, 0f);
+        waterSpriteRenderer.transform.localRotation = Quaternion.identity;
+        waterSpriteRenderer.transform.localScale = Vector3.one;
+
+        if (visualRenderer != null && visualRenderer != GetComponent<SpriteRenderer>())
+        {
+            SpriteRenderer rootRenderer = GetComponent<SpriteRenderer>();
+            if (rootRenderer != null)
+            {
+                rootRenderer.enabled = false;
+            }
         }
     }
 
