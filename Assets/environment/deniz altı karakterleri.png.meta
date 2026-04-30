@@ -1,0 +1,624 @@
+fileFormatVersion: 2
+guid: a39f9c7183ad4834085bf8d86fbe7fbd
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -2278669004176254402
+    second: "deniz alt\u0131 karakterleri_0"
+  - first:
+      213: 5541291402163342404
+    second: "deniz alt\u0131 karakterleri_1"
+  - first:
+      213: -7514938617701494818
+    second: "deniz alt\u0131 karakterleri_2"
+  - first:
+      213: -4234446369595563571
+    second: "deniz alt\u0131 karakterleri_3"
+  - first:
+      213: 6402467643208927817
+    second: "deniz alt\u0131 karakterleri_4"
+  - first:
+      213: -2662029358225153842
+    second: "deniz alt\u0131 karakterleri_5"
+  - first:
+      213: -5947042641750684983
+    second: "deniz alt\u0131 karakterleri_6"
+  - first:
+      213: 5585745258429686191
+    second: "deniz alt\u0131 karakterleri_7"
+  - first:
+      213: -3710140898142690465
+    second: "deniz alt\u0131 karakterleri_8"
+  - first:
+      213: -2485096794811611633
+    second: "deniz alt\u0131 karakterleri_9"
+  - first:
+      213: 8648428024207582897
+    second: "deniz alt\u0131 karakterleri_10"
+  - first:
+      213: -5598295975399356773
+    second: "deniz alt\u0131 karakterleri_11"
+  - first:
+      213: 3547118945102967416
+    second: "deniz alt\u0131 karakterleri_12"
+  - first:
+      213: 2325076910291888255
+    second: "deniz alt\u0131 karakterleri_13"
+  - first:
+      213: -7636622586033197124
+    second: "deniz alt\u0131 karakterleri_14"
+  - first:
+      213: 2200308164029892861
+    second: "deniz alt\u0131 karakterleri_15"
+  - first:
+      213: 3641700744921397267
+    second: "deniz alt\u0131 karakterleri_16"
+  - first:
+      213: 2762434438220146853
+    second: "deniz alt\u0131 karakterleri_17"
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Android
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: iOS
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_0"
+      rect:
+        serializedVersion: 2
+        x: 2
+        y: 299
+        width: 55
+        height: 48
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e3a91651d9a8060e0800000000000000
+      internalID: -2278669004176254402
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_1"
+      rect:
+        serializedVersion: 2
+        x: 65
+        y: 319
+        width: 43
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 44c4fd6db2f96ec40800000000000000
+      internalID: 5541291402163342404
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_2"
+      rect:
+        serializedVersion: 2
+        x: 131
+        y: 324
+        width: 21
+        height: 33
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: edf890f942395b790800000000000000
+      internalID: -7514938617701494818
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_3"
+      rect:
+        serializedVersion: 2
+        x: 186
+        y: 328
+        width: 33
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: dc160df36793c35c0800000000000000
+      internalID: -4234446369595563571
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_4"
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 316
+        width: 26
+        height: 41
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 94a866756622ad850800000000000000
+      internalID: 6402467643208927817
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_5"
+      rect:
+        serializedVersion: 2
+        x: 5
+        y: 226
+        width: 41
+        height: 36
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ec0245917629e0bd0800000000000000
+      internalID: -2662029358225153842
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_6"
+      rect:
+        serializedVersion: 2
+        x: 66
+        y: 225
+        width: 39
+        height: 40
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 9ca8952e93cd77da0800000000000000
+      internalID: -5947042641750684983
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_7"
+      rect:
+        serializedVersion: 2
+        x: 125
+        y: 237
+        width: 35
+        height: 27
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fa1268ec7bd848d40800000000000000
+      internalID: 5585745258429686191
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_8"
+      rect:
+        serializedVersion: 2
+        x: 186
+        y: 219
+        width: 54
+        height: 43
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f536e83a28ee28cc0800000000000000
+      internalID: -3710140898142690465
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_9"
+      rect:
+        serializedVersion: 2
+        x: 248
+        y: 228
+        width: 32
+        height: 31
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f06cac8b1a9238dd0800000000000000
+      internalID: -2485096794811611633
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_10"
+      rect:
+        serializedVersion: 2
+        x: 10
+        y: 136
+        width: 21
+        height: 34
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1b62d687773650870800000000000000
+      internalID: 8648428024207582897
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_11"
+      rect:
+        serializedVersion: 2
+        x: 65
+        y: 131
+        width: 45
+        height: 32
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b9682dea87bde42b0800000000000000
+      internalID: -5598295975399356773
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_12"
+      rect:
+        serializedVersion: 2
+        x: 124
+        y: 129
+        width: 47
+        height: 37
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 872bbea13e5e93130800000000000000
+      internalID: 3547118945102967416
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_13"
+      rect:
+        serializedVersion: 2
+        x: 188
+        y: 126
+        width: 43
+        height: 41
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f7829619125544020800000000000000
+      internalID: 2325076910291888255
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_14"
+      rect:
+        serializedVersion: 2
+        x: 247
+        y: 129
+        width: 44
+        height: 35
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cbf24c3f734450690800000000000000
+      internalID: -7636622586033197124
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_15"
+      rect:
+        serializedVersion: 2
+        x: 3
+        y: 42
+        width: 33
+        height: 27
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: df8c4611e90198e10800000000000000
+      internalID: 2200308164029892861
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_16"
+      rect:
+        serializedVersion: 2
+        x: 64
+        y: 52
+        width: 34
+        height: 29
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 318b05f688be98230800000000000000
+      internalID: 3641700744921397267
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "deniz alt\u0131 karakterleri_17"
+      rect:
+        serializedVersion: 2
+        x: 125
+        y: 53
+        width: 34
+        height: 28
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5a8ea6d4c73265620800000000000000
+      internalID: 2762434438220146853
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      "deniz alt\u0131 karakterleri_0": -2278669004176254402
+      "deniz alt\u0131 karakterleri_1": 5541291402163342404
+      "deniz alt\u0131 karakterleri_10": 8648428024207582897
+      "deniz alt\u0131 karakterleri_11": -5598295975399356773
+      "deniz alt\u0131 karakterleri_12": 3547118945102967416
+      "deniz alt\u0131 karakterleri_13": 2325076910291888255
+      "deniz alt\u0131 karakterleri_14": -7636622586033197124
+      "deniz alt\u0131 karakterleri_15": 2200308164029892861
+      "deniz alt\u0131 karakterleri_16": 3641700744921397267
+      "deniz alt\u0131 karakterleri_17": 2762434438220146853
+      "deniz alt\u0131 karakterleri_2": -7514938617701494818
+      "deniz alt\u0131 karakterleri_3": -4234446369595563571
+      "deniz alt\u0131 karakterleri_4": 6402467643208927817
+      "deniz alt\u0131 karakterleri_5": -2662029358225153842
+      "deniz alt\u0131 karakterleri_6": -5947042641750684983
+      "deniz alt\u0131 karakterleri_7": 5585745258429686191
+      "deniz alt\u0131 karakterleri_8": -3710140898142690465
+      "deniz alt\u0131 karakterleri_9": -2485096794811611633
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
