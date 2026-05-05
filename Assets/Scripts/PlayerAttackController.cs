@@ -11,6 +11,7 @@ public class PlayerAttackController : MonoBehaviour
 
     [Header("Targeting")]
     public LayerMask enemyLayer = Physics2D.AllLayers;
+    public LayerMask electricNodeLayer = Physics2D.AllLayers;
 
     [Header("Fin Melee Attack")]
     public int finAttackDamage = 1;
@@ -73,10 +74,12 @@ public class PlayerAttackController : MonoBehaviour
     private void PerformTailElectricAttack()
     {
         Vector2 attackCenter = GetTailAttackCenter();
-        Collider2D[] hitResults = Physics2D.OverlapBoxAll(attackCenter, tailElectricSize, 0f, enemyLayer);
-        bool hitEnemy = DamageEnemies(hitResults, tailElectricDamage, true, tailElectricStunDuration);
+        Collider2D[] enemyHits = Physics2D.OverlapBoxAll(attackCenter, tailElectricSize, 0f, enemyLayer);
+        Collider2D[] nodeHits = Physics2D.OverlapBoxAll(attackCenter, tailElectricSize, 0f, electricNodeLayer);
+        bool hitEnemy = DamageEnemies(enemyHits, tailElectricDamage, true, tailElectricStunDuration);
+        bool hitNode = ActivateElectricNodes(nodeHits);
 
-        if (hitEnemy)
+        if (hitEnemy || hitNode)
         {
             playerController.TriggerHitStop(tailElectricHitStopDuration);
         }
@@ -115,6 +118,30 @@ public class PlayerAttackController : MonoBehaviour
         }
 
         return hitEnemy;
+    }
+
+    private bool ActivateElectricNodes(Collider2D[] hitResults)
+    {
+        bool hitNode = false;
+
+        for (int i = 0; i < hitResults.Length; i++)
+        {
+            Collider2D hit = hitResults[i];
+            if (hit == null)
+                continue;
+
+            ElectricNode node = hit.GetComponent<ElectricNode>();
+            if (node == null)
+                node = hit.GetComponentInParent<ElectricNode>();
+
+            if (node == null)
+                continue;
+
+            hitNode = true;
+            node.ReactToElectricHit();
+        }
+
+        return hitNode;
     }
 
     private Vector2 GetFinAttackCenter()

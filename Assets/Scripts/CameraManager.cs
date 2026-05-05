@@ -11,6 +11,7 @@ public class CameraManager : MonoBehaviour
 
     private Room currentRoom;
     private Room[] rooms;
+    private float lastScreenAspect = -1f;
 
     public Room CurrentRoom => currentRoom;
 
@@ -30,10 +31,15 @@ public class CameraManager : MonoBehaviour
 
     private void Start()
     {
+        lastScreenAspect = GetScreenAspect();
+
         if (startingRoom != null)
         {
             ActivateRoom(startingRoom);
+            return;
         }
+
+        ResetMainCameraViewport();
     }
 
     private void OnDestroy()
@@ -44,10 +50,30 @@ public class CameraManager : MonoBehaviour
         }
     }
 
+    private void LateUpdate()
+    {
+        float currentAspect = GetScreenAspect();
+        if (currentRoom != null && !Mathf.Approximately(currentAspect, lastScreenAspect))
+        {
+            currentRoom.FitCameraToRoom(Camera.main, currentAspect);
+        }
+
+        lastScreenAspect = currentAspect;
+    }
+
     public void ActivateRoom(Room room)
     {
-        if (room == null || room == currentRoom)
+        if (room == null)
         {
+            return;
+        }
+
+        float currentAspect = GetScreenAspect();
+
+        if (room == currentRoom)
+        {
+            room.FitCameraToRoom(Camera.main, currentAspect);
+            lastScreenAspect = currentAspect;
             return;
         }
 
@@ -57,7 +83,9 @@ public class CameraManager : MonoBehaviour
         }
 
         room.SetPriority(activePriority);
+        room.FitCameraToRoom(Camera.main, currentAspect);
         currentRoom = room;
+        lastScreenAspect = currentAspect;
     }
 
     private void DeactivateAllRooms()
@@ -76,5 +104,22 @@ public class CameraManager : MonoBehaviour
 
             room.SetPriority(inactivePriority);
         }
+    }
+
+    private float GetScreenAspect()
+    {
+        if (Screen.height <= 0)
+        {
+            return 16f / 9f;
+        }
+
+        return (float)Screen.width / Screen.height;
+    }
+
+    private void ResetMainCameraViewport()
+    {
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null)
+            mainCamera.rect = new Rect(0f, 0f, 1f, 1f);
     }
 }

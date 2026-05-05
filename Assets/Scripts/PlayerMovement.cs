@@ -55,6 +55,9 @@ public class PlayerMovement : MonoBehaviour
     private bool isGrounded;
     private bool facingRight = true;
 
+    // External forces (CurrentZone, etc.) — consumed each FixedUpdate
+    private Vector2 externalVelocityAccum;
+
     /// <summary>True while gravity is slowly blending back after a water exit.</summary>
     private bool isWaterExitTransition;
     private float waterExitGravityTimer;
@@ -221,9 +224,18 @@ public class PlayerMovement : MonoBehaviour
         UpdateGroundedState(suppressGroundCheck);
     }
 
+    /// <summary>Queue an external velocity push (e.g. CurrentZone). Accumulated and consumed once per FixedUpdate.</summary>
+    public void AddExternalVelocity(Vector2 velocity)
+    {
+        externalVelocityAccum += velocity;
+    }
+
     public void Move(Vector2 moveInput)
     {
         SetFacingFromDirection(moveInput.x);
+
+        Vector2 ext = externalVelocityAccum;
+        externalVelocityAccum = Vector2.zero;
 
         if (stateMachine.CurrentMode == PlayerMode.Water)
         {
@@ -232,11 +244,11 @@ public class PlayerMovement : MonoBehaviour
                 return;
             }
 
-            ApplyWaterMovement(moveInput);
+            ApplyWaterMovement(moveInput, ext);
             return;
         }
 
-        ApplyLandMovement(moveInput.x);
+        ApplyLandMovement(moveInput.x, ext);
     }
 
     public void Jump()
@@ -279,9 +291,10 @@ public class PlayerMovement : MonoBehaviour
         return Mathf.Abs(moveInput.x) > 0.0001f || Mathf.Abs(rb.linearVelocity.x) > 0.05f;
     }
 
-    private void ApplyWaterMovement(Vector2 moveInput)
+    private void ApplyWaterMovement(Vector2 moveInput, Vector2 externalVelocity)
     {
-        Vector2 targetVelocity = moveInput * waterMoveSpeed;
+        // External push is added to the target so smoothing works with it, not against it
+        Vector2 targetVelocity = moveInput * waterMoveSpeed + externalVelocity;
         float smoothTime = moveInput.sqrMagnitude > 0.0001f
             ? waterAccelerationTime
             : waterDecelerationTime;
@@ -298,9 +311,9 @@ public class PlayerMovement : MonoBehaviour
         rb.linearVelocity = nextVelocity;
     }
 
-    private void ApplyLandMovement(float horizontalInput)
+    private void ApplyLandMovement(float horizontalInput, Vector2 externalVelocity)
     {
-        float targetVelocityX = horizontalInput * landMoveSpeed;
+        float targetVelocityX = horizontalInput * landMoveSpeed + externalVelocity.x;
         float accelerationTime = Mathf.Abs(horizontalInput) > 0.0001f
             ? landAccelerationTime
             : landDecelerationTime;
@@ -312,7 +325,9 @@ public class PlayerMovement : MonoBehaviour
             targetVelocityX,
             acceleration * Time.fixedDeltaTime);
 
-        rb.linearVelocity = new Vector2(nextVelocityX, rb.linearVelocity.y);
+        // Vertical external push (e.g. upward current) applied directly
+        float nextVelocityY = rb.linearVelocity.y + externalVelocity.y * Time.fixedDeltaTime;
+        rb.linearVelocity = new Vector2(nextVelocityX, nextVelocityY);
     }
 
     private void UpdateGroundedState(bool suppressGroundCheck)

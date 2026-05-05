@@ -24,7 +24,11 @@ public class PlayerBubbleElevator : MonoBehaviour
     [Tooltip("İsteğe bağlı: Bubble görseli için kullanılacak Sprite")]
     public Sprite bubbleSprite;
     public Color bubbleColor = new Color(0.7f, 0.9f, 1f, 0.6f);
-    public Vector3 bubbleScale = new Vector3(1.2f, 1.2f, 1f);
+    public Vector3 bubbleScale = new Vector3(1.4f, 1.8f, 1f);
+    [Tooltip("Karakterin etrafında ne kadar boşluk bırakılacağı")]
+    public Vector2 bubblePadding = new Vector2(0.25f, 0.35f);
+    [Tooltip("Balonun karaktere göre küçük konum düzeltmesi için")]
+    public Vector3 bubbleLocalOffset = new Vector3(0f, -0.2f, 0f);
 
     public bool IsInBubble { get; private set; }
 
@@ -39,6 +43,7 @@ public class PlayerBubbleElevator : MonoBehaviour
     private float bubbleTimer;
 
     private GameObject bubbleVisualObj;
+    private GameObject bubbleSpriteObj;
     private SpriteRenderer bubbleRenderer;
 
     private void Awake()
@@ -58,10 +63,13 @@ public class PlayerBubbleElevator : MonoBehaviour
     {
         bubbleVisualObj = new GameObject("BubbleVisual");
         bubbleVisualObj.transform.SetParent(transform);
-        bubbleVisualObj.transform.localPosition = Vector3.zero;
+        bubbleVisualObj.transform.localPosition = bubbleLocalOffset;
         bubbleVisualObj.transform.localScale = bubbleScale;
 
-        bubbleRenderer = bubbleVisualObj.AddComponent<SpriteRenderer>();
+        bubbleSpriteObj = new GameObject("BubbleSprite");
+        bubbleSpriteObj.transform.SetParent(bubbleVisualObj.transform, false);
+
+        bubbleRenderer = bubbleSpriteObj.AddComponent<SpriteRenderer>();
         bubbleRenderer.color = bubbleColor;
         bubbleRenderer.sortingOrder = 15; // Oyuncunun önünde çizilsin
         bubbleVisualObj.SetActive(false);
@@ -75,6 +83,9 @@ public class PlayerBubbleElevator : MonoBehaviour
         {
             bubbleRenderer.sprite = CreateCircleSprite(128);
         }
+
+        NormalizeBubbleSpritePivot();
+        RefreshBubbleVisualScale();
     }
 
     private Sprite CreateCircleSprite(int size)
@@ -146,6 +157,8 @@ public class PlayerBubbleElevator : MonoBehaviour
             // uyarı verin. UnityEditor kütüphanesini build'de kullanamayız.
             Debug.LogWarning("Bubble Elevator: Bubble Sprite atanmamış! Lütfen Inspector'dan bir sprite atayın.");
         }
+
+        RefreshBubbleVisualScale();
         bubbleVisualObj.SetActive(true);
     }
 
@@ -231,5 +244,163 @@ public class PlayerBubbleElevator : MonoBehaviour
         // Tavan kontrol ışınını çiz
         Gizmos.color = Color.red;
         Gizmos.DrawLine(transform.position, transform.position + Vector3.up * ceilingCheckDistance);
+    }
+
+    private void RefreshBubbleVisualScale()
+    {
+        if (bubbleVisualObj == null)
+            return;
+
+        Bounds sizingBounds;
+        if (!TryGetCharacterBounds(out sizingBounds))
+        {
+            bubbleVisualObj.transform.localPosition = bubbleLocalOffset;
+            bubbleVisualObj.transform.localScale = bubbleScale;
+            return;
+        }
+
+        Vector3 anchorWorldCenter = GetBubbleAnchorWorldCenter(sizingBounds);
+
+        Vector3 localCenter = transform.InverseTransformPoint(anchorWorldCenter);
+        bubbleVisualObj.transform.localPosition = localCenter + bubbleLocalOffset;
+
+        float desiredWorldWidth = Mathf.Max(bubbleScale.x, sizingBounds.size.x + bubblePadding.x);
+        float desiredWorldHeight = Mathf.Max(bubbleScale.y, sizingBounds.size.y + bubblePadding.y);
+
+        Vector3 parentLossyScale = transform.lossyScale;
+        float safeScaleX = Mathf.Abs(parentLossyScale.x) > 0.0001f ? Mathf.Abs(parentLossyScale.x) : 1f;
+        float safeScaleY = Mathf.Abs(parentLossyScale.y) > 0.0001f ? Mathf.Abs(parentLossyScale.y) : 1f;
+
+        Vector2 spriteWorldSize = GetBubbleSpriteWorldSize();
+        float safeSpriteWidth = spriteWorldSize.x > 0.0001f ? spriteWorldSize.x : 1f;
+        float safeSpriteHeight = spriteWorldSize.y > 0.0001f ? spriteWorldSize.y : 1f;
+
+        float localWidth = desiredWorldWidth / (safeScaleX * safeSpriteWidth);
+        float localHeight = desiredWorldHeight / (safeScaleY * safeSpriteHeight);
+
+        bubbleVisualObj.transform.localScale = new Vector3(localWidth, localHeight, 1f);
+        NormalizeBubbleSpritePivot();
+    }
+
+    private Vector3 GetBubbleAnchorWorldCenter(Bounds sizingBounds)
+    {
+        bool hasColliderBounds = TryGetColliderBounds(out Bounds colliderBounds);
+        bool hasSpriteBounds = TryGetSpriteBounds(out Bounds spriteBounds);
+
+        if (hasColliderBounds && hasSpriteBounds)
+        {
+            Vector3 combinedCenter = (colliderBounds.center + spriteBounds.center) * 0.5f;
+            float loweredY = Mathf.Lerp(combinedCenter.y, sizingBounds.min.y + (sizingBounds.size.y * 0.42f), 0.65f);
+            return new Vector3(combinedCenter.x, loweredY, combinedCenter.z);
+        }
+
+        if (hasColliderBounds)
+        {
+            float loweredY = colliderBounds.min.y + (colliderBounds.size.y * 0.45f);
+            return new Vector3(colliderBounds.center.x, loweredY, colliderBounds.center.z);
+        }
+
+        if (hasSpriteBounds)
+        {
+            float loweredY = spriteBounds.min.y + (spriteBounds.size.y * 0.42f);
+            return new Vector3(spriteBounds.center.x, loweredY, spriteBounds.center.z);
+        }
+
+        return sizingBounds.center;
+    }
+
+    private Vector2 GetBubbleSpriteWorldSize()
+    {
+        if (bubbleRenderer == null || bubbleRenderer.sprite == null)
+            return Vector2.one;
+
+        Bounds spriteBounds = bubbleRenderer.sprite.bounds;
+        return spriteBounds.size;
+    }
+
+    private void NormalizeBubbleSpritePivot()
+    {
+        if (bubbleSpriteObj == null || bubbleRenderer == null || bubbleRenderer.sprite == null)
+            return;
+
+        bubbleSpriteObj.transform.localPosition = -bubbleRenderer.sprite.bounds.center;
+    }
+
+    private bool TryGetCharacterBounds(out Bounds bounds)
+    {
+        bool hasColliderBounds = TryGetColliderBounds(out Bounds colliderBounds);
+        bool hasSpriteBounds = TryGetSpriteBounds(out Bounds spriteBounds);
+
+        if (hasColliderBounds && hasSpriteBounds)
+        {
+            bounds = colliderBounds;
+            bounds.Encapsulate(spriteBounds);
+            return true;
+        }
+
+        if (hasColliderBounds)
+        {
+            bounds = colliderBounds;
+            return true;
+        }
+
+        if (hasSpriteBounds)
+        {
+            bounds = spriteBounds;
+            return true;
+        }
+
+        bounds = new Bounds(transform.position, Vector3.zero);
+        return false;
+    }
+
+    private bool TryGetColliderBounds(out Bounds bounds)
+    {
+        Collider2D[] colliders = GetComponentsInChildren<Collider2D>();
+        bool hasBounds = false;
+        bounds = new Bounds(transform.position, Vector3.zero);
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider2D currentCollider = colliders[i];
+            if (currentCollider == null || currentCollider.isTrigger)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = currentCollider.bounds;
+                hasBounds = true;
+                continue;
+            }
+
+            bounds.Encapsulate(currentCollider.bounds);
+        }
+
+        return hasBounds;
+    }
+
+    private bool TryGetSpriteBounds(out Bounds bounds)
+    {
+        SpriteRenderer[] renderers = GetComponentsInChildren<SpriteRenderer>();
+        bool hasBounds = false;
+        bounds = new Bounds(transform.position, Vector3.zero);
+
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            SpriteRenderer currentRenderer = renderers[i];
+            if (currentRenderer == null || currentRenderer == bubbleRenderer)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = currentRenderer.bounds;
+                hasBounds = true;
+                continue;
+            }
+
+            bounds.Encapsulate(currentRenderer.bounds);
+        }
+
+        return hasBounds;
     }
 }
