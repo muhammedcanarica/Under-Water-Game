@@ -27,6 +27,7 @@ public class PlayerInputReader : MonoBehaviour
     private bool secondaryAttackQueued;
 
     public Vector2 MoveInput { get; private set; }
+    public bool IsJumpHeld => jumpAction != null && jumpAction.IsPressed();
 
     private void Awake()
     {

@@ -1,10 +1,12 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(PlayerStateMachine))]
 public class PlayerMovement : MonoBehaviour
 {
+    private const float GroundedVerticalVelocityThreshold = 1f;
     private static PhysicsMaterial2D frictionlessMaterial;
 
     [Header("Mode")]
@@ -25,15 +27,37 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float waterMoveSpeed = 5f;
     [SerializeField] private float waterAccelerationTime = 0.12f;
     [SerializeField] private float waterDecelerationTime = 0.05f;
-    [SerializeField] private float waterLinearDamping = 0.2f;
+    [FormerlySerializedAs("waterLinearDamping")]
+    [SerializeField] private float waterDrag = 0.2f;
+    [SerializeField] private float waterGravity = 0f;
+    [SerializeField] private float waterEntryVerticalVelocityMultiplier = 1f;
+    [SerializeField] private float waterEntryMomentumMultiplier = 1f;
+    [SerializeField] private float waterEntryDrag = 18f;
+    [SerializeField] private float maxWaterDiveSpeed = 14f;
+    [SerializeField] private float waterBuoyancy = 0.2f;
+    [SerializeField] private float waterIdleVerticalDrift = -0.15f;
 
     [Header("Land Movement")]
     [SerializeField] private float landMoveSpeed = 5f;
     [SerializeField] private float landAccelerationTime = 0.08f;
     [SerializeField] private float landDecelerationTime = 0.05f;
-    [SerializeField] private float landGravityScale = 3f;
+    [FormerlySerializedAs("landGravityScale")]
+    [SerializeField] private float normalGravity = 3f;
+    [SerializeField] private float normalDrag = 0f;
     [SerializeField] private float jumpForce = 12f;
     [SerializeField] private float jumpCooldown = 0.2f;
+    [SerializeField] private float landGroundAcceleration = 62f;
+    [SerializeField] private float landGroundDeceleration = 78f;
+    [SerializeField] private float landAirAcceleration = 42f;
+    [SerializeField] private float landAirDeceleration = 48f;
+    [FormerlySerializedAs("landCoyoteTime")]
+    [SerializeField] private float coyoteTime = 0.1f;
+    [FormerlySerializedAs("landJumpBufferTime")]
+    [SerializeField] private float jumpBufferTime = 0.12f;
+    [FormerlySerializedAs("landFallGravityMultiplier")]
+    [SerializeField] private float fallMultiplier = 1.9f;
+    [FormerlySerializedAs("landLowJumpGravityMultiplier")]
+    [SerializeField] private float lowJumpMultiplier = 2.6f;
 
     [Header("Ground Check")]
     [SerializeField] private Transform groundCheck;
@@ -52,8 +76,13 @@ public class PlayerMovement : MonoBehaviour
     private float modeTransitionTimer;
     private float groundCheckGraceTimer;
     private float jumpCooldownTimer;
+    private float coyoteTimer;
+    private float jumpBufferTimer;
     private bool isGrounded;
+    private bool isJumpHeld;
     private bool facingRight = true;
+    private float waterEntryMomentum;
+    private bool hasWaterEntryMomentum;
 
     // External forces (CurrentZone, etc.) — consumed each FixedUpdate
     private Vector2 externalVelocityAccum;
@@ -65,12 +94,9 @@ public class PlayerMovement : MonoBehaviour
     public PlayerMode StartingMode => startingMode;
     public Rigidbody2D Body => rb;
     public bool IsGrounded => isGrounded;
-    public bool CanJump => stateMachine != null &&
-                           stateMachine.CurrentMode == PlayerMode.Land &&
-                           isGrounded &&
-                           jumpCooldownTimer <= 0f &&
-                           modeTransitionTimer <= 0f;
+    public bool CanJump => CanUseLandJump();
     public Vector2 FacingDirection => facingRight ? Vector2.right : Vector2.left;
+    private bool isInWater => stateMachine != null && stateMachine.CurrentMode == PlayerMode.Water;
 
     private void Awake()
     {
@@ -78,12 +104,13 @@ public class PlayerMovement : MonoBehaviour
         colliders = GetComponents<Collider2D>();
         stateMachine = GetComponent<PlayerStateMachine>();
         EnsureGroundLayerMask();
+        EnsureLandAccelerationDefaults();
         ConfigureBodyForSmoothMotion();
         ConfigureContactMaterials();
 
         if (groundCheck == null)
         {
-            Transform detectedGroundCheck = transform.Find("GroundCheck");
+            Transform detectedGroundCheck = FindGroundCheckTransform();
             if (detectedGroundCheck != null)
             {
                 groundCheck = detectedGroundCheck;
@@ -97,6 +124,7 @@ public class PlayerMovement : MonoBehaviour
         rb = rb != null ? rb : GetComponent<Rigidbody2D>();
         colliders = colliders != null && colliders.Length > 0 ? colliders : GetComponents<Collider2D>();
         EnsureGroundLayerMask();
+        EnsureLandAccelerationDefaults();
         ConfigureBodyForSmoothMotion();
         ConfigureContactMaterials();
 
@@ -156,10 +184,15 @@ public class PlayerMovement : MonoBehaviour
         {
             groundCheckGraceTimer = 0f;
             isWaterExitTransition = false;
+            BeginWaterEntryMomentum(preservedVerticalVelocity);
+        }
+        else
+        {
+            ClearWaterEntryMomentum();
         }
 
-        targetGravityScale = mode == PlayerMode.Water ? 0f : landGravityScale;
-        targetDrag = mode == PlayerMode.Water ? waterLinearDamping : 0f;
+        targetGravityScale = mode == PlayerMode.Water ? waterGravity : normalGravity;
+        targetDrag = mode == PlayerMode.Water ? waterDrag : normalDrag;
         ResetLandMovementState();
 
         if (forceInitialize && !isWaterToLand)
@@ -216,12 +249,31 @@ public class PlayerMovement : MonoBehaviour
         rb.linearDamping = Mathf.Lerp(rb.linearDamping, targetDrag, currentGravityBlendSpeed * Time.fixedDeltaTime);
 
         // --- E) Düşme hızını sınırla — ani düşmeyi önle ---
-        if (rb.linearVelocity.y < -maxFallSpeed)
+        if (stateMachine != null &&
+            stateMachine.CurrentMode != PlayerMode.Water &&
+            rb.linearVelocity.y < -maxFallSpeed)
         {
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, -maxFallSpeed);
         }
 
         UpdateGroundedState(suppressGroundCheck);
+
+        if (isInWater)
+        {
+            coyoteTimer = 0f;
+            return;
+        }
+
+        if (isGrounded)
+        {
+            coyoteTimer = coyoteTime;
+            return;
+        }
+
+        if (coyoteTimer > 0f)
+        {
+            coyoteTimer -= Time.fixedDeltaTime;
+        }
     }
 
     /// <summary>Queue an external velocity push (e.g. CurrentZone). Accumulated and consumed once per FixedUpdate.</summary>
@@ -248,7 +300,8 @@ public class PlayerMovement : MonoBehaviour
             return;
         }
 
-        ApplyLandMovement(moveInput.x, ext);
+        HandleLandMovement(moveInput.x, ext);
+        ApplyLandGravity();
     }
 
     public void Jump()
@@ -261,7 +314,36 @@ public class PlayerMovement : MonoBehaviour
         rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
         rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
         jumpCooldownTimer = jumpCooldown;
+        jumpBufferTimer = 0f;
+        coyoteTimer = 0f;
         isGrounded = false;
+    }
+
+    public void SetJumpHeld(bool jumpHeld)
+    {
+        isJumpHeld = jumpHeld;
+    }
+
+    public void HandleLandJump(bool jumpRequested)
+    {
+        if (isInWater) return;
+
+        if (jumpBufferTimer > 0f)
+        {
+            jumpBufferTimer -= Time.fixedDeltaTime;
+        }
+
+        if (jumpRequested)
+        {
+            jumpBufferTimer = jumpBufferTime;
+        }
+
+        if (!CanUseLandJump() || jumpBufferTimer <= 0f)
+        {
+            return;
+        }
+
+        Jump();
     }
 
     public void SetFacingFromDirection(float directionX)
@@ -293,8 +375,20 @@ public class PlayerMovement : MonoBehaviour
 
     private void ApplyWaterMovement(Vector2 moveInput, Vector2 externalVelocity)
     {
+        float targetVerticalVelocity = moveInput.y * waterMoveSpeed
+            + externalVelocity.y
+            + waterIdleVerticalDrift
+            + waterBuoyancy;
+
+        if (Mathf.Abs(moveInput.y) < 0.0001f && hasWaterEntryMomentum)
+        {
+            targetVerticalVelocity += waterEntryMomentum;
+        }
+
         // External push is added to the target so smoothing works with it, not against it
-        Vector2 targetVelocity = moveInput * waterMoveSpeed + externalVelocity;
+        Vector2 targetVelocity = new Vector2(
+            moveInput.x * waterMoveSpeed + externalVelocity.x,
+            targetVerticalVelocity);
         float smoothTime = moveInput.sqrMagnitude > 0.0001f
             ? waterAccelerationTime
             : waterDecelerationTime;
@@ -307,19 +401,21 @@ public class PlayerMovement : MonoBehaviour
             Mathf.Infinity,
             Time.fixedDeltaTime);
 
-        nextVelocity.y = Mathf.Clamp(nextVelocity.y, -maxWaterVerticalSpeed, maxWaterVerticalSpeed);
+        nextVelocity.y = Mathf.Clamp(nextVelocity.y, -maxWaterDiveSpeed, maxWaterVerticalSpeed);
         rb.linearVelocity = nextVelocity;
+        DecayWaterEntryMomentum(moveInput.y);
     }
 
-    private void ApplyLandMovement(float horizontalInput, Vector2 externalVelocity)
+    private void HandleLandMovement(float horizontalInput, Vector2 externalVelocity)
     {
+        if (isInWater) return;
+
         float targetVelocityX = horizontalInput * landMoveSpeed + externalVelocity.x;
-        float accelerationTime = Mathf.Abs(horizontalInput) > 0.0001f
-            ? landAccelerationTime
-            : landDecelerationTime;
-        float acceleration = accelerationTime > 0.0001f
-            ? landMoveSpeed / accelerationTime
-            : float.PositiveInfinity;
+        bool hasInput = Mathf.Abs(horizontalInput) > 0.0001f;
+        bool groundedForMovement = isGrounded && !isWaterExitTransition;
+        float acceleration = hasInput
+            ? (groundedForMovement ? landGroundAcceleration : landAirAcceleration)
+            : (groundedForMovement ? landGroundDeceleration : landAirDeceleration);
         float nextVelocityX = Mathf.MoveTowards(
             rb.linearVelocity.x,
             targetVelocityX,
@@ -330,6 +426,35 @@ public class PlayerMovement : MonoBehaviour
         rb.linearVelocity = new Vector2(nextVelocityX, nextVelocityY);
     }
 
+    private void ApplyLandGravity()
+    {
+        if (isInWater) return;
+        if (isWaterExitTransition || isGrounded)
+        {
+            return;
+        }
+
+        float gravityMultiplier = 1f;
+
+        if (rb.linearVelocity.y < -Mathf.Epsilon)
+        {
+            gravityMultiplier = fallMultiplier;
+        }
+        else if (!isJumpHeld && rb.linearVelocity.y > Mathf.Epsilon)
+        {
+            gravityMultiplier = lowJumpMultiplier;
+        }
+
+        if (gravityMultiplier <= 1f)
+        {
+            return;
+        }
+
+        float extraGravity = (gravityMultiplier - 1f) * normalGravity * Mathf.Abs(Physics2D.gravity.y);
+        float nextVelocityY = rb.linearVelocity.y - extraGravity * Time.fixedDeltaTime;
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x, Mathf.Max(nextVelocityY, -maxFallSpeed));
+    }
+
     private void UpdateGroundedState(bool suppressGroundCheck)
     {
         if (stateMachine == null || stateMachine.CurrentMode == PlayerMode.Water)
@@ -338,7 +463,7 @@ public class PlayerMovement : MonoBehaviour
             return;
         }
 
-        if (suppressGroundCheck || groundCheckGraceTimer > 0f || rb.linearVelocity.y > Mathf.Epsilon || groundCheck == null)
+        if (suppressGroundCheck || groundCheckGraceTimer > 0f || rb.linearVelocity.y > GroundedVerticalVelocityThreshold || groundCheck == null)
         {
             isGrounded = false;
             return;
@@ -361,6 +486,12 @@ public class PlayerMovement : MonoBehaviour
     private void OnValidate()
     {
         EnsureGroundLayerMask();
+        EnsureLandAccelerationDefaults();
+
+        if (groundCheck == null)
+        {
+            groundCheck = FindGroundCheckTransform();
+        }
     }
 
     private void EnsureGroundLayerMask()
@@ -372,6 +503,54 @@ public class PlayerMovement : MonoBehaviour
         {
             groundLayer |= defaultLayer;
         }
+    }
+
+    private void EnsureLandAccelerationDefaults()
+    {
+        if (landGroundAcceleration <= 0f)
+        {
+            landGroundAcceleration = landAccelerationTime > 0.0001f
+                ? landMoveSpeed / landAccelerationTime
+                : landMoveSpeed;
+        }
+
+        if (landGroundDeceleration <= 0f)
+        {
+            landGroundDeceleration = landDecelerationTime > 0.0001f
+                ? landMoveSpeed / landDecelerationTime
+                : landMoveSpeed;
+        }
+
+        if (landAirAcceleration <= 0f)
+        {
+            landAirAcceleration = landGroundAcceleration;
+        }
+
+        if (landAirDeceleration <= 0f)
+        {
+            landAirDeceleration = landGroundDeceleration;
+        }
+    }
+
+    private Transform FindGroundCheckTransform()
+    {
+        Transform directChild = transform.Find("GroundCheck");
+        if (directChild != null)
+        {
+            return directChild;
+        }
+
+        Transform[] childTransforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < childTransforms.Length; i++)
+        {
+            Transform child = childTransforms[i];
+            if (child != null && child != transform && child.name == "GroundCheck")
+            {
+                return child;
+            }
+        }
+
+        return null;
     }
 
     private void ConfigureBodyForSmoothMotion()
@@ -389,6 +568,60 @@ public class PlayerMovement : MonoBehaviour
     private void ResetLandMovementState()
     {
         waterVelocitySmoothing = Vector2.zero;
+        coyoteTimer = 0f;
+        jumpBufferTimer = 0f;
+        if (stateMachine == null || stateMachine.CurrentMode != PlayerMode.Water)
+        {
+            ClearWaterEntryMomentum();
+        }
+    }
+
+    private bool CanUseLandJump()
+    {
+        return stateMachine != null &&
+               !isInWater &&
+               (isGrounded || coyoteTimer > 0f) &&
+               jumpCooldownTimer <= 0f;
+    }
+
+    private void BeginWaterEntryMomentum(float currentVerticalVelocity)
+    {
+        if (currentVerticalVelocity >= 0f)
+        {
+            ClearWaterEntryMomentum();
+            return;
+        }
+
+        float entryVelocity = currentVerticalVelocity * waterEntryVerticalVelocityMultiplier;
+        entryVelocity *= waterEntryMomentumMultiplier;
+        waterEntryMomentum = Mathf.Clamp(entryVelocity, -maxWaterDiveSpeed, 0f);
+        hasWaterEntryMomentum = Mathf.Abs(waterEntryMomentum) > 0.01f;
+    }
+
+    private void DecayWaterEntryMomentum(float verticalInput)
+    {
+        if (!hasWaterEntryMomentum)
+        {
+            return;
+        }
+
+        float drag = waterEntryDrag;
+        if (Mathf.Abs(verticalInput) > 0.0001f)
+        {
+            drag *= 2f;
+        }
+
+        waterEntryMomentum = Mathf.MoveTowards(waterEntryMomentum, 0f, drag * Time.fixedDeltaTime);
+        if (Mathf.Abs(waterEntryMomentum) <= 0.01f)
+        {
+            ClearWaterEntryMomentum();
+        }
+    }
+
+    private void ClearWaterEntryMomentum()
+    {
+        waterEntryMomentum = 0f;
+        hasWaterEntryMomentum = false;
     }
 
     private void ConfigureContactMaterials()

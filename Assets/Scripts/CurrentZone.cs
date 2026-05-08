@@ -7,12 +7,22 @@ public sealed class CurrentZone : MonoBehaviour
     private enum DirectionSource
     {
         FlowDirection = 0,
-        TransformRight = 1
+        TransformRight = 1,
+        CardinalDirection = 2
+    }
+
+    private enum CardinalDirection
+    {
+        Right = 0,
+        Left = 1,
+        Up = 2,
+        Down = 3
     }
 
     [Header("Flow Settings")]
     [SerializeField] private DirectionSource directionSource = DirectionSource.FlowDirection;
     [SerializeField] private Vector2 flowDirection = Vector2.right;
+    [SerializeField] private CardinalDirection inspectorDirection = CardinalDirection.Right;
     [SerializeField] private float flowForce = 3f;
 
     [Header("Particle Visual")]
@@ -25,10 +35,15 @@ public sealed class CurrentZone : MonoBehaviour
 
     private Collider2D triggerCollider;
     private ParticleSystem flowParticles;
-
-    // ──────────────────────────────────────────────
-    // Unity lifecycle
-    // ──────────────────────────────────────────────
+    private Vector2 lastParticleDirection;
+    private Vector3 lastParticleBoundsCenter;
+    private Vector3 lastParticleBoundsSize;
+    private bool particleStateCached;
+    private bool lastShowParticles;
+    private float lastParticleSpeed;
+    private int lastEmissionRate;
+    private float lastParticleSize;
+    private Color lastParticleColor;
 
     private void Reset()
     {
@@ -42,9 +57,7 @@ public sealed class CurrentZone : MonoBehaviour
         CacheCollider();
         NormalizeFlowDirection();
         EnsureTriggerCollider();
-
-        if (showParticles)
-            BuildParticleSystem();
+        RefreshParticleSystem(true);
     }
 
     private void OnValidate()
@@ -53,11 +66,13 @@ public sealed class CurrentZone : MonoBehaviour
         NormalizeFlowDirection();
         EnsureTriggerCollider();
         flowForce = Mathf.Max(0f, flowForce);
+        particleStateCached = false;
     }
 
-    // ──────────────────────────────────────────────
-    // Trigger — force
-    // ──────────────────────────────────────────────
+    private void LateUpdate()
+    {
+        RefreshParticleSystem();
+    }
 
     private void OnTriggerStay2D(Collider2D other)
     {
@@ -68,7 +83,6 @@ public sealed class CurrentZone : MonoBehaviour
         if (normalizedDirection == Vector2.zero || flowForce <= 0f)
             return;
 
-        // Route through PlayerMovement so the force isn't overwritten by velocity smoothing
         PlayerMovement movement = other.GetComponentInParent<PlayerMovement>();
         if (movement != null)
         {
@@ -76,135 +90,87 @@ public sealed class CurrentZone : MonoBehaviour
             return;
         }
 
-        // Fallback: direct velocity push (no PlayerMovement found)
         Rigidbody2D targetBody = other.attachedRigidbody;
         if (targetBody != null)
             targetBody.linearVelocity += normalizedDirection * flowForce * Time.fixedDeltaTime;
     }
 
-    // ──────────────────────────────────────────────
-    // Particle system — directional streaming
-    // ──────────────────────────────────────────────
-
-    private void BuildParticleSystem()
+    private void BuildParticleSystem(Bounds zoneBounds, Vector2 dir)
     {
-        if (flowParticles != null)
-        {
-            Destroy(flowParticles.gameObject);
-            flowParticles = null;
-        }
+        DestroyFlowParticles();
 
-        Collider2D col = triggerCollider != null ? triggerCollider : GetComponent<Collider2D>();
-        Vector2 dir    = GetNormalizedFlowDirection();
-        if (dir == Vector2.zero) return;
+        Vector2 worldSize = zoneBounds.size;
+        Vector2 worldCenter = zoneBounds.center;
 
-        // ── World-space zone size (accounts for transform scale) ──
-        Vector2 worldSize;
-        Vector2 worldCenter;
-        if (col is BoxCollider2D box)
-        {
-            // size is in local units; multiply by lossy scale for world size
-            worldSize   = new Vector2(box.size.x * Mathf.Abs(transform.lossyScale.x),
-                                      box.size.y * Mathf.Abs(transform.lossyScale.y));
-            // world-space center = transform pos + rotated offset (rotation ignored for simplicity)
-            worldCenter = (Vector2)transform.position
-                        + new Vector2(box.offset.x * transform.lossyScale.x,
-                                      box.offset.y * transform.lossyScale.y);
-        }
-        else
-        {
-            Bounds wb   = col.bounds;
-            worldSize   = wb.size;
-            worldCenter = wb.center;
-        }
-
-        // "Along" = axis parallel to flow.  "Cross" = perpendicular.
         bool horizontal = Mathf.Abs(dir.x) >= Mathf.Abs(dir.y);
         float zoneAlong = horizontal ? worldSize.x : worldSize.y;
         float zoneCross = horizontal ? worldSize.y : worldSize.x;
-
-        // Lifetime so a particle crosses the full zone at particleSpeed
-        float travelTime = zoneAlong / Mathf.Max(particleSpeed, 0.01f);
-
-        // ── Spawn strip on the UPWIND edge ──
+        float travelTime = Mathf.Max(0.1f, zoneAlong / Mathf.Max(particleSpeed, 0.01f));
         float stripThick = Mathf.Max(zoneAlong * 0.05f, 0.1f);
 
-        // Shape scale in WORLD units (SimulationSpace.World)
         Vector3 stripScale = horizontal
             ? new Vector3(stripThick, zoneCross, 0.05f)
-            : new Vector3(zoneCross,  stripThick, 0.05f);
+            : new Vector3(zoneCross, stripThick, 0.05f);
 
-        // World-space position of the strip centre (upwind edge of zone)
         Vector3 spawnPos = new Vector3(
             worldCenter.x - dir.x * (zoneAlong * 0.5f - stripThick * 0.5f),
             worldCenter.y - dir.y * (zoneAlong * 0.5f - stripThick * 0.5f),
             0f);
 
-        // ── Build GO ──
-        // Place the GO at the spawn strip world position and ROTATE it to face flow direction
-        // This lets startSpeed drive particles in the right direction — no velocityOverLifetime needed.
         GameObject psGO = new GameObject("CurrentFlowFX");
         psGO.transform.SetParent(transform, false);
-        psGO.transform.position = spawnPos; // world-space upwind edge
-
-        // Keep GO at world position, no rotation needed
+        psGO.transform.position = spawnPos;
         psGO.transform.rotation = Quaternion.identity;
 
         flowParticles = psGO.AddComponent<ParticleSystem>();
         var rend = psGO.GetComponent<ParticleSystemRenderer>();
 
-        // ── Main ──
         var main = flowParticles.main;
-        main.loop            = true;
-        main.playOnAwake     = true;
+        main.loop = true;
+        main.playOnAwake = true;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.startLifetime   = new ParticleSystem.MinMaxCurve(travelTime * 0.9f, travelTime * 1.15f);
-        main.startSpeed      = new ParticleSystem.MinMaxCurve(0f); // ForceOverLifetime drives movement
-        main.startSize       = new ParticleSystem.MinMaxCurve(particleSize * 0.6f, particleSize);
-        main.startColor      = new ParticleSystem.MinMaxGradient(
-                                 new Color(particleColor.r, particleColor.g, particleColor.b, 0.2f),
-                                 particleColor);
+        main.startLifetime = new ParticleSystem.MinMaxCurve(travelTime * 0.9f, travelTime * 1.15f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0f);
+        main.startSize = new ParticleSystem.MinMaxCurve(particleSize * 0.6f, particleSize);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(particleColor.r, particleColor.g, particleColor.b, 0.2f),
+            particleColor);
         main.gravityModifier = 0f;
-        main.maxParticles    = 400;
+        main.maxParticles = 400;
 
-        // ── Emission ──
         var emission = flowParticles.emission;
-        emission.enabled      = true;
+        emission.enabled = true;
         emission.rateOverTime = emissionRate;
 
-        // ── Shape: thin strip on the upwind edge (world-aligned, no rotation) ──
         var shape = flowParticles.shape;
-        shape.enabled   = true;
+        shape.enabled = true;
         shape.shapeType = ParticleSystemShapeType.Box;
-        shape.scale     = stripScale;
-        shape.position  = Vector3.zero;
-        shape.rotation  = Vector3.zero;
+        shape.scale = stripScale;
+        shape.position = Vector3.zero;
+        shape.rotation = Vector3.zero;
 
-        // ── ForceOverLifetime: constant world-space push in flow direction ──
-        // Force = velocity / time so particles reach ~particleSpeed by mid-lifetime.
-        // Using travelTime as the time reference gives a natural acceleration.
-        float forceMagnitude = particleSpeed / (travelTime * 0.35f);
+        var velocity = flowParticles.velocityOverLifetime;
+        velocity.enabled = true;
+        velocity.space = ParticleSystemSimulationSpace.World;
+        velocity.x = new ParticleSystem.MinMaxCurve(dir.x * particleSpeed);
+        velocity.y = new ParticleSystem.MinMaxCurve(dir.y * particleSpeed);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f);
+
         var force = flowParticles.forceOverLifetime;
-        force.enabled = true;
-        force.space   = ParticleSystemSimulationSpace.World;
-        force.x       = new ParticleSystem.MinMaxCurve(dir.x * forceMagnitude);
-        force.y       = new ParticleSystem.MinMaxCurve(dir.y * forceMagnitude);
-        force.z       = new ParticleSystem.MinMaxCurve(0f);
+        force.enabled = false;
 
-        // ── Size over lifetime: fade in → full → fade out ──
         var sol = flowParticles.sizeOverLifetime;
         sol.enabled = true;
-        sol.size    = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
-            new Keyframe(0f,    0f,  0f, 6f),
+        sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 0f, 0f, 6f),
             new Keyframe(0.12f, 1f),
             new Keyframe(0.82f, 1f),
-            new Keyframe(1f,    0f,  -6f, 0f)));
+            new Keyframe(1f, 0f, -6f, 0f)));
 
-        // ── Color over lifetime: alpha fade ──
         var colt = flowParticles.colorOverLifetime;
         colt.enabled = true;
-        Gradient g = new Gradient();
-        g.SetKeys(
+        Gradient gradient = new Gradient();
+        gradient.SetKeys(
             new[]
             {
                 new GradientColorKey(new Color(particleColor.r, particleColor.g, particleColor.b), 0f),
@@ -212,17 +178,16 @@ public sealed class CurrentZone : MonoBehaviour
             },
             new[]
             {
-                new GradientAlphaKey(0f,              0f),
+                new GradientAlphaKey(0f, 0f),
                 new GradientAlphaKey(particleColor.a, 0.18f),
                 new GradientAlphaKey(particleColor.a, 0.78f),
-                new GradientAlphaKey(0f,              1f)
+                new GradientAlphaKey(0f, 1f)
             });
-        colt.color = new ParticleSystem.MinMaxGradient(g);
+        colt.color = new ParticleSystem.MinMaxGradient(gradient);
 
-        // ── Renderer ──
-        rend.renderMode       = ParticleSystemRenderMode.Billboard;
+        rend.renderMode = ParticleSystemRenderMode.Billboard;
         rend.sortingLayerName = "Default";
-        rend.sortingOrder     = 20; // above water tilemaps (order 0)
+        rend.sortingOrder = 20;
 
         Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
                      ?? Shader.Find("Sprites/Default")
@@ -232,28 +197,122 @@ public sealed class CurrentZone : MonoBehaviour
         {
             var mat = new Material(shader) { name = "CurrentFlowFX_Mat" };
             mat.SetFloat("_Surface", 1f);
-            mat.SetFloat("_Blend",   0f);
-            mat.SetFloat("_ZWrite",  0f);
+            mat.SetFloat("_Blend", 0f);
+            mat.SetFloat("_ZWrite", 0f);
             mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             mat.renderQueue = 3000;
-            mat.color       = particleColor;
-            rend.material   = mat;
+            mat.color = particleColor;
+            rend.material = mat;
         }
 
         flowParticles.Play();
     }
 
-    // ──────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────
+    private void RefreshParticleSystem(bool forceRebuild = false)
+    {
+        if (!showParticles)
+        {
+            DestroyFlowParticles();
+            CacheParticleState(Vector2.zero, default, false);
+            return;
+        }
+
+        Collider2D col = triggerCollider != null ? triggerCollider : GetComponent<Collider2D>();
+        Vector2 dir = GetNormalizedFlowDirection();
+        if (col == null || dir == Vector2.zero)
+        {
+            DestroyFlowParticles();
+            CacheParticleState(dir, default, false);
+            return;
+        }
+
+        Bounds bounds = col.bounds;
+        if (!forceRebuild && !ParticleSystemNeedsRefresh(dir, bounds))
+        {
+            return;
+        }
+
+        BuildParticleSystem(bounds, dir);
+        CacheParticleState(dir, bounds, true);
+        transform.hasChanged = false;
+    }
+
+    private bool ParticleSystemNeedsRefresh(Vector2 dir, Bounds bounds)
+    {
+        if (flowParticles == null || !particleStateCached)
+            return true;
+
+        if (transform.hasChanged || lastShowParticles != showParticles)
+            return true;
+
+        if ((lastParticleDirection - dir).sqrMagnitude > 0.0001f)
+            return true;
+
+        if ((lastParticleBoundsCenter - bounds.center).sqrMagnitude > 0.0001f)
+            return true;
+
+        if ((lastParticleBoundsSize - bounds.size).sqrMagnitude > 0.0001f)
+            return true;
+
+        if (!Mathf.Approximately(lastParticleSpeed, particleSpeed))
+            return true;
+
+        if (lastEmissionRate != emissionRate)
+            return true;
+
+        if (!Mathf.Approximately(lastParticleSize, particleSize))
+            return true;
+
+        return lastParticleColor != particleColor;
+    }
+
+    private void CacheParticleState(Vector2 dir, Bounds bounds, bool particlesVisible)
+    {
+        particleStateCached = true;
+        lastParticleDirection = dir;
+        lastParticleBoundsCenter = bounds.center;
+        lastParticleBoundsSize = bounds.size;
+        lastShowParticles = particlesVisible && showParticles;
+        lastParticleSpeed = particleSpeed;
+        lastEmissionRate = emissionRate;
+        lastParticleSize = particleSize;
+        lastParticleColor = particleColor;
+    }
+
+    private void DestroyFlowParticles()
+    {
+        if (flowParticles == null)
+            return;
+
+        if (Application.isPlaying)
+            Destroy(flowParticles.gameObject);
+        else
+            DestroyImmediate(flowParticles.gameObject);
+
+        flowParticles = null;
+    }
 
     private Vector2 GetNormalizedFlowDirection()
     {
-        Vector2 sourceDirection = directionSource == DirectionSource.TransformRight
-            ? (Vector2)transform.right
-            : flowDirection;
+        Vector2 sourceDirection = directionSource switch
+        {
+            DirectionSource.TransformRight => (Vector2)transform.right,
+            DirectionSource.CardinalDirection => GetCardinalDirectionVector(),
+            _ => flowDirection
+        };
 
         return sourceDirection.sqrMagnitude > 0f ? sourceDirection.normalized : Vector2.zero;
+    }
+
+    private Vector2 GetCardinalDirectionVector()
+    {
+        return inspectorDirection switch
+        {
+            CardinalDirection.Left => Vector2.left,
+            CardinalDirection.Up => Vector2.up,
+            CardinalDirection.Down => Vector2.down,
+            _ => Vector2.right
+        };
     }
 
     private void CacheCollider()
@@ -274,14 +333,11 @@ public sealed class CurrentZone : MonoBehaviour
             flowDirection = flowDirection.normalized;
     }
 
-    // ──────────────────────────────────────────────
-    // Gizmos
-    // ──────────────────────────────────────────────
-
     private void OnDrawGizmosSelected()
     {
         Collider2D zoneCollider = triggerCollider != null ? triggerCollider : GetComponent<Collider2D>();
-        if (zoneCollider == null) return;
+        if (zoneCollider == null)
+            return;
 
         Bounds bounds = zoneCollider.bounds;
         Vector3 center = bounds.center;
@@ -290,13 +346,14 @@ public sealed class CurrentZone : MonoBehaviour
         Gizmos.color = new Color(0.2f, 0.7f, 1f, 0.2f);
         Gizmos.DrawCube(center, bounds.size);
 
-        if (direction == Vector3.zero) return;
+        if (direction == Vector3.zero)
+            return;
 
         Gizmos.color = Color.cyan;
         Vector3 arrowEnd = center + (direction.normalized * Mathf.Max(bounds.extents.x, bounds.extents.y, 0.5f));
         Gizmos.DrawLine(center, arrowEnd);
 
-        Vector3 headR = Quaternion.Euler(0f, 0f, 25f)  * -direction.normalized * 0.35f;
+        Vector3 headR = Quaternion.Euler(0f, 0f, 25f) * -direction.normalized * 0.35f;
         Vector3 headL = Quaternion.Euler(0f, 0f, -25f) * -direction.normalized * 0.35f;
         Gizmos.DrawLine(arrowEnd, arrowEnd + headR);
         Gizmos.DrawLine(arrowEnd, arrowEnd + headL);

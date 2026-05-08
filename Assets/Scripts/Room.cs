@@ -6,6 +6,7 @@ using UnityEngine;
 public class Room : MonoBehaviour
 {
     [SerializeField] private CinemachineVirtualCameraBase virtualCamera;
+    [SerializeField] private BoxCollider2D cameraBounds;
     [SerializeField] private string playerTag = "Player";
     [SerializeField] private bool fitCameraToRoom = true;
     [SerializeField] private Vector2 cameraPadding = Vector2.zero;
@@ -17,10 +18,19 @@ public class Room : MonoBehaviour
     [SerializeField] private Color cameraFrameColor = new Color(0.3f, 1f, 0.3f, 0.95f);
     [SerializeField] private Color cameraCenterColor = new Color(0.3f, 1f, 0.3f, 0.75f);
 
+    private const string CameraBoundsChildName = "CameraBounds";
+
+    private Transform trackedPlayer;
+    private float preferredOrthographicSize = -1f;
+
     public CinemachineVirtualCameraBase VirtualCamera => virtualCamera;
 
     private void Awake()
     {
+        EnsureTriggerCollider();
+        ResolveCameraBoundsCollider();
+        CachePreferredOrthographicSize();
+
         if (virtualCamera == null)
         {
             Debug.LogWarning($"[{nameof(Room)}] No virtual camera assigned on '{name}'.", this);
@@ -30,12 +40,13 @@ public class Room : MonoBehaviour
     private void Reset()
     {
         EnsureTriggerCollider();
+        ResolveCameraBoundsCollider();
     }
 
     private void OnValidate()
     {
         EnsureTriggerCollider();
-        FitCameraToRoom(Camera.main, GetCurrentScreenAspect());
+        ResolveCameraBoundsCollider();
     }
 
     private void OnTriggerEnter2D(Collider2D other)
@@ -45,6 +56,7 @@ public class Room : MonoBehaviour
             return;
         }
 
+        TrackPlayer(other);
         CameraManager.Instance?.ActivateRoom(this);
     }
 
@@ -55,6 +67,7 @@ public class Room : MonoBehaviour
             return;
         }
 
+        TrackPlayer(other);
         CameraManager.Instance?.ActivateRoom(this);
     }
 
@@ -73,45 +86,149 @@ public class Room : MonoBehaviour
 
     public void FitCameraToRoom(Camera outputCamera, float screenAspect)
     {
+        ResetOutputCameraViewport(outputCamera);
+
         if (!fitCameraToRoom || virtualCamera == null)
         {
-            ResetOutputCameraViewport(outputCamera);
             return;
         }
 
         CinemachineCamera cinemachineCamera = virtualCamera as CinemachineCamera;
         if (cinemachineCamera == null)
         {
-            ResetOutputCameraViewport(outputCamera);
             return;
         }
 
-        Bounds bounds = GetRoomBounds();
-        float paddedWidth = bounds.size.x + (cameraPadding.x * 2f);
-        float paddedHeight = bounds.size.y + (cameraPadding.y * 2f);
-        float requiredHeight = Mathf.Max(minimumOrthographicSize * 2f, paddedHeight);
-        float targetAspect = requiredHeight > 0.0001f ? paddedWidth / requiredHeight : (16f / 9f);
+        CachePreferredOrthographicSize(cinemachineCamera);
+
+        float safeAspect = screenAspect > 0.0001f ? screenAspect : GetCurrentScreenAspect();
+        Bounds bounds = GetCameraBounds();
+        float targetOrthographicSize = CalculateOrthographicSize(bounds, safeAspect);
 
         LensSettings lens = cinemachineCamera.Lens;
-        lens.OrthographicSize = requiredHeight * 0.5f;
+        lens.OrthographicSize = targetOrthographicSize;
         cinemachineCamera.Lens = lens;
 
-        AlignCameraToRoomCenter(bounds.center);
+        AlignCameraWithinBounds(bounds, ResolveFollowPosition(bounds.center), safeAspect, targetOrthographicSize);
+    }
 
-        if (outputCamera != null)
-            outputCamera.rect = CalculateViewportRect(screenAspect, targetAspect);
+    private void TrackPlayer(Collider2D other)
+    {
+        Rigidbody2D body = other.attachedRigidbody;
+        trackedPlayer = body != null ? body.transform : other.transform;
     }
 
     private void EnsureTriggerCollider()
     {
-        BoxCollider2D roomBounds = GetComponent<BoxCollider2D>();
-        roomBounds.isTrigger = true;
+        BoxCollider2D roomTrigger = GetComponent<BoxCollider2D>();
+        if (roomTrigger != null)
+        {
+            roomTrigger.isTrigger = true;
+        }
+    }
+
+    private BoxCollider2D ResolveCameraBoundsCollider()
+    {
+        Transform boundsChild = transform.Find(CameraBoundsChildName);
+        if (boundsChild != null)
+        {
+            BoxCollider2D childBounds = boundsChild.GetComponent<BoxCollider2D>();
+            if (childBounds != null)
+            {
+                cameraBounds = childBounds;
+                return cameraBounds;
+            }
+        }
+
+        if (cameraBounds != null)
+        {
+            return cameraBounds;
+        }
+
+        cameraBounds = GetComponent<BoxCollider2D>();
+
+        return cameraBounds;
+    }
+
+    private void CachePreferredOrthographicSize(CinemachineCamera cinemachineCamera = null)
+    {
+        if (preferredOrthographicSize > 0f)
+        {
+            return;
+        }
+
+        if (cinemachineCamera == null)
+        {
+            cinemachineCamera = virtualCamera as CinemachineCamera;
+        }
+
+        if (cinemachineCamera == null)
+        {
+            preferredOrthographicSize = Mathf.Max(0.01f, minimumOrthographicSize);
+            return;
+        }
+
+        preferredOrthographicSize = Mathf.Max(0.01f, cinemachineCamera.Lens.OrthographicSize);
+    }
+
+    private Bounds GetCameraBounds()
+    {
+        BoxCollider2D boundsCollider = ResolveCameraBoundsCollider();
+        if (boundsCollider == null)
+        {
+            return new Bounds(transform.position, Vector3.zero);
+        }
+
+        return BuildBounds(boundsCollider);
+    }
+
+    private float CalculateOrthographicSize(Bounds bounds, float screenAspect)
+    {
+        float usableWidth = Mathf.Max(0.01f, bounds.size.x - (cameraPadding.x * 2f));
+        float usableHeight = Mathf.Max(0.01f, bounds.size.y - (cameraPadding.y * 2f));
+        float maxSizeByWidth = usableWidth / (2f * Mathf.Max(screenAspect, 0.0001f));
+        float maxSizeByHeight = usableHeight * 0.5f;
+        float maxAllowedSize = Mathf.Max(0.01f, Mathf.Min(maxSizeByWidth, maxSizeByHeight));
+        float desiredSize = Mathf.Max(0.01f, Mathf.Max(minimumOrthographicSize, preferredOrthographicSize));
+        return Mathf.Min(desiredSize, maxAllowedSize);
+    }
+
+    private Vector3 ResolveFollowPosition(Vector3 fallbackPosition)
+    {
+        if (trackedPlayer == null || !trackedPlayer.gameObject.activeInHierarchy)
+        {
+            GameObject taggedPlayer = GameObject.FindGameObjectWithTag(playerTag);
+            trackedPlayer = taggedPlayer != null ? taggedPlayer.transform : null;
+        }
+
+        return trackedPlayer != null ? trackedPlayer.position : fallbackPosition;
+    }
+
+    private void AlignCameraWithinBounds(Bounds bounds, Vector3 followPosition, float screenAspect, float orthographicSize)
+    {
+        Transform cameraTransform = virtualCamera.transform;
+        float halfHeight = orthographicSize;
+        float halfWidth = orthographicSize * Mathf.Max(screenAspect, 0.0001f);
+        float minX = bounds.min.x + cameraPadding.x + halfWidth;
+        float maxX = bounds.max.x - cameraPadding.x - halfWidth;
+        float minY = bounds.min.y + cameraPadding.y + halfHeight;
+        float maxY = bounds.max.y - cameraPadding.y - halfHeight;
+
+        float targetX = minX <= maxX
+            ? Mathf.Clamp(followPosition.x, minX, maxX)
+            : bounds.center.x;
+        float targetY = minY <= maxY
+            ? Mathf.Clamp(followPosition.y, minY, maxY)
+            : bounds.center.y;
+
+        Vector3 currentPosition = cameraTransform.position;
+        cameraTransform.position = new Vector3(targetX, targetY, currentPosition.z);
     }
 
     private void OnDrawGizmos()
     {
-        BoxCollider2D roomBounds = GetComponent<BoxCollider2D>();
-        if (roomBounds == null)
+        BoxCollider2D roomTrigger = GetComponent<BoxCollider2D>();
+        if (roomTrigger == null)
         {
             return;
         }
@@ -120,14 +237,24 @@ public class Room : MonoBehaviour
         Color fillColor = isActiveRoom ? activeGizmoFillColor : inactiveGizmoFillColor;
         Color outlineColor = isActiveRoom ? activeGizmoOutlineColor : inactiveGizmoOutlineColor;
 
-        Matrix4x4 previousMatrix = Gizmos.matrix;
-        Gizmos.matrix = transform.localToWorldMatrix;
+        DrawColliderGizmo(roomTrigger, fillColor, outlineColor, true);
 
-        Vector3 colliderCenter = roomBounds.offset;
-        Vector3 colliderSize = roomBounds.size;
-        float cornerSize = Mathf.Clamp(Mathf.Min(colliderSize.x, colliderSize.y) * 0.12f, 0.35f, 2.5f);
-        float halfWidth = colliderSize.x * 0.5f;
-        float halfHeight = colliderSize.y * 0.5f;
+        BoxCollider2D boundsCollider = cameraBounds != null ? cameraBounds : transform.Find(CameraBoundsChildName)?.GetComponent<BoxCollider2D>();
+        if (boundsCollider != null && boundsCollider != roomTrigger)
+        {
+            DrawColliderGizmo(boundsCollider, new Color(0.1f, 0.7f, 1f, 0.08f), new Color(0.15f, 0.75f, 1f, 0.9f), false);
+        }
+
+        DrawCameraGizmo();
+    }
+
+    private void DrawColliderGizmo(BoxCollider2D collider2D, Color fillColor, Color outlineColor, bool drawCorners)
+    {
+        Matrix4x4 previousMatrix = Gizmos.matrix;
+        Gizmos.matrix = collider2D.transform.localToWorldMatrix;
+
+        Vector3 colliderCenter = collider2D.offset;
+        Vector3 colliderSize = collider2D.size;
 
         Gizmos.color = fillColor;
         Gizmos.DrawCube(colliderCenter, colliderSize);
@@ -135,14 +262,19 @@ public class Room : MonoBehaviour
         Gizmos.color = outlineColor;
         Gizmos.DrawWireCube(colliderCenter, colliderSize);
 
-        DrawCorner(colliderCenter, new Vector3(-halfWidth, halfHeight, 0f), Vector3.right, Vector3.down, cornerSize);
-        DrawCorner(colliderCenter, new Vector3(halfWidth, halfHeight, 0f), Vector3.left, Vector3.down, cornerSize);
-        DrawCorner(colliderCenter, new Vector3(-halfWidth, -halfHeight, 0f), Vector3.right, Vector3.up, cornerSize);
-        DrawCorner(colliderCenter, new Vector3(halfWidth, -halfHeight, 0f), Vector3.left, Vector3.up, cornerSize);
+        if (drawCorners)
+        {
+            float cornerSize = Mathf.Clamp(Mathf.Min(colliderSize.x, colliderSize.y) * 0.12f, 0.35f, 2.5f);
+            float halfWidth = colliderSize.x * 0.5f;
+            float halfHeight = colliderSize.y * 0.5f;
+
+            DrawCorner(colliderCenter, new Vector3(-halfWidth, halfHeight, 0f), Vector3.right, Vector3.down, cornerSize);
+            DrawCorner(colliderCenter, new Vector3(halfWidth, halfHeight, 0f), Vector3.left, Vector3.down, cornerSize);
+            DrawCorner(colliderCenter, new Vector3(-halfWidth, -halfHeight, 0f), Vector3.right, Vector3.up, cornerSize);
+            DrawCorner(colliderCenter, new Vector3(halfWidth, -halfHeight, 0f), Vector3.left, Vector3.up, cornerSize);
+        }
 
         Gizmos.matrix = previousMatrix;
-
-        DrawCameraGizmo();
     }
 
     private void DrawCorner(Vector3 center, Vector3 cornerOffset, Vector3 horizontalDirection, Vector3 verticalDirection, float length)
@@ -182,60 +314,37 @@ public class Room : MonoBehaviour
         Gizmos.DrawLine(transform.position, center);
     }
 
-    private Bounds GetRoomBounds()
+    private static Bounds BuildBounds(BoxCollider2D collider2D)
     {
-        BoxCollider2D roomBounds = GetComponent<BoxCollider2D>();
-        if (roomBounds == null)
-        {
-            return new Bounds(transform.position, Vector3.zero);
-        }
-
-        return roomBounds.bounds;
-    }
-
-    private void AlignCameraToRoomCenter(Vector3 roomCenter)
-    {
-        Transform cameraTransform = virtualCamera.transform;
-        Vector3 currentPosition = cameraTransform.position;
-        cameraTransform.position = new Vector3(roomCenter.x, roomCenter.y, currentPosition.z);
+        Vector3 center = collider2D.transform.TransformPoint(collider2D.offset);
+        Vector3 lossyScale = collider2D.transform.lossyScale;
+        Vector3 size = new Vector3(
+            Mathf.Abs(collider2D.size.x * lossyScale.x),
+            Mathf.Abs(collider2D.size.y * lossyScale.y),
+            0f);
+        return new Bounds(center, size);
     }
 
     private static void ResetOutputCameraViewport(Camera outputCamera)
     {
         if (outputCamera != null)
+        {
             outputCamera.rect = new Rect(0f, 0f, 1f, 1f);
-    }
-
-    private static Rect CalculateViewportRect(float screenAspect, float targetAspect)
-    {
-        float safeScreenAspect = screenAspect > 0.0001f ? screenAspect : (16f / 9f);
-        float safeTargetAspect = targetAspect > 0.0001f ? targetAspect : safeScreenAspect;
-
-        if (safeScreenAspect > safeTargetAspect)
-        {
-            float normalizedWidth = safeTargetAspect / safeScreenAspect;
-            float xOffset = (1f - normalizedWidth) * 0.5f;
-            return new Rect(xOffset, 0f, normalizedWidth, 1f);
         }
-
-        if (safeScreenAspect < safeTargetAspect)
-        {
-            float normalizedHeight = safeScreenAspect / safeTargetAspect;
-            float yOffset = (1f - normalizedHeight) * 0.5f;
-            return new Rect(0f, yOffset, 1f, normalizedHeight);
-        }
-
-        return new Rect(0f, 0f, 1f, 1f);
     }
 
     private static float GetViewportAspect(Camera camera)
     {
         if (camera == null)
+        {
             return 16f / 9f;
+        }
 
         Rect rect = camera.rect;
         if (rect.height <= 0.0001f || Screen.height <= 0)
+        {
             return 16f / 9f;
+        }
 
         float screenAspect = (float)Screen.width / Screen.height;
         return screenAspect * (rect.width / rect.height);
@@ -244,7 +353,9 @@ public class Room : MonoBehaviour
     private static float GetCurrentScreenAspect()
     {
         if (Screen.height <= 0)
+        {
             return 16f / 9f;
+        }
 
         return (float)Screen.width / Screen.height;
     }

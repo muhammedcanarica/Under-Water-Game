@@ -27,6 +27,7 @@ public class CameraManager : MonoBehaviour
         Instance = this;
         rooms = FindObjectsByType<Room>(FindObjectsSortMode.None);
         DeactivateAllRooms();
+        LogDuplicatePlayers();
     }
 
     private void Start()
@@ -53,9 +54,13 @@ public class CameraManager : MonoBehaviour
     private void LateUpdate()
     {
         float currentAspect = GetScreenAspect();
-        if (currentRoom != null && !Mathf.Approximately(currentAspect, lastScreenAspect))
+        if (currentRoom != null)
         {
             currentRoom.FitCameraToRoom(Camera.main, currentAspect);
+        }
+        else if (!Mathf.Approximately(currentAspect, lastScreenAspect))
+        {
+            ResetMainCameraViewport();
         }
 
         lastScreenAspect = currentAspect;
@@ -121,5 +126,25 @@ public class CameraManager : MonoBehaviour
         Camera mainCamera = Camera.main;
         if (mainCamera != null)
             mainCamera.rect = new Rect(0f, 0f, 1f, 1f);
+    }
+
+    private void LogDuplicatePlayers()
+    {
+        PlayerController[] players = FindObjectsByType<PlayerController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        if (players.Length <= 1)
+        {
+            return;
+        }
+
+        string[] playerNames = new string[players.Length];
+        for (int i = 0; i < players.Length; i++)
+        {
+            playerNames[i] = $"{players[i].name}#{players[i].GetInstanceID()}";
+        }
+
+        Debug.LogWarning(
+            $"[{nameof(CameraManager)}] Multiple player instances detected: {string.Join(", ", playerNames)}. " +
+            "Room triggers may activate the wrong camera target until duplicate players are removed.",
+            this);
     }
 }

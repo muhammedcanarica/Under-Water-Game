@@ -22,6 +22,9 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private PlayerHitStop hitStop;
     [SerializeField] private PlayerDashTrailFeedback dashTrailFeedback;
 
+    private bool pendingJumpRequested;
+    private bool pendingDashRequested;
+
     public PlayerMode currentMode => stateMachine != null ? stateMachine.CurrentMode : PlayerMode.Land;
     public bool IsDashing => stateMachine != null && stateMachine.IsInState(PlayerMotionState.Dash);
     public Vector2 FacingDirection => movement != null ? movement.FacingDirection : Vector2.right;
@@ -60,6 +63,7 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        CacheActionRequests();
         dash.TickTimers(Time.deltaTime);
         UpdateLocomotionState();
     }
@@ -76,7 +80,9 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        HandleActionRequests();
+        HandleActionRequests(pendingJumpRequested, pendingDashRequested);
+        pendingJumpRequested = false;
+        pendingDashRequested = false;
 
         if (dash.IsDashing)
         {
@@ -114,17 +120,11 @@ public class PlayerController : MonoBehaviour
         hitStop?.Trigger(duration);
     }
 
-    private void HandleActionRequests()
+    private void HandleActionRequests(bool jumpRequested, bool dashRequested)
     {
-        bool jumpRequested = inputReader.ConsumeJumpPressed();
-        bool dashRequested = inputReader.ConsumeDashPressed();
-
         if (currentMode == PlayerMode.Land)
         {
-            if (jumpRequested && movement.CanJump)
-            {
-                movement.Jump();
-            }
+            movement.HandleLandJump(jumpRequested);
 
             if (dashRequested)
             {
@@ -138,6 +138,18 @@ public class PlayerController : MonoBehaviour
         {
             dash.TryStartDash(inputReader.MoveInput);
         }
+    }
+
+    private void CacheActionRequests()
+    {
+        if (inputReader == null)
+        {
+            return;
+        }
+
+        pendingJumpRequested |= inputReader.ConsumeJumpPressed();
+        pendingDashRequested |= inputReader.ConsumeDashPressed();
+        movement?.SetJumpHeld(inputReader.IsJumpHeld);
     }
 
     private void UpdateLocomotionState()
