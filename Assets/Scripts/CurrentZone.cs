@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider2D))]
@@ -21,11 +22,17 @@ public sealed class CurrentZone : MonoBehaviour
 
     [Header("Flow Settings")]
     [SerializeField] private DirectionSource directionSource = DirectionSource.FlowDirection;
-    [SerializeField] private Vector2 flowDirection = Vector2.right;
+    [FormerlySerializedAs("flowDirection")]
+    public Vector2 direction = Vector2.right;
     [SerializeField] private CardinalDirection inspectorDirection = CardinalDirection.Right;
-    [SerializeField] private float flowForce = 3f;
+    [FormerlySerializedAs("flowForce")]
+    public float force = 3f;
+    public bool affectOnlyInWater;
+    [Tooltip("How quickly the push direction eases into a newly set direction. Use 0 for instant force reversal.")]
+    public float directionBlendTime = 0.08f;
 
     [Header("Particle Visual")]
+    public Transform visualArrowParent;
     [SerializeField] private bool showParticles = true;
     [SerializeField] private Color particleColor = new Color(0.3f, 0.75f, 1f, 0.7f);
     [SerializeField] private float particleSpeed = 3f;
@@ -44,20 +51,27 @@ public sealed class CurrentZone : MonoBehaviour
     private int lastEmissionRate;
     private float lastParticleSize;
     private Color lastParticleColor;
+    private Vector2 appliedDirection;
+    private Vector2 appliedDirectionVelocity;
+    private bool appliedDirectionInitialized;
 
     private void Reset()
     {
         CacheCollider();
         NormalizeFlowDirection();
+        SnapAppliedDirection();
         EnsureTriggerCollider();
+        UpdateVisualDirection();
     }
 
     private void Awake()
     {
         CacheCollider();
         NormalizeFlowDirection();
+        SnapAppliedDirection();
         EnsureTriggerCollider();
         RefreshParticleSystem(true);
+        UpdateVisualDirection();
     }
 
     private void OnValidate()
@@ -65,12 +79,15 @@ public sealed class CurrentZone : MonoBehaviour
         CacheCollider();
         NormalizeFlowDirection();
         EnsureTriggerCollider();
-        flowForce = Mathf.Max(0f, flowForce);
+        force = Mathf.Max(0f, force);
+        directionBlendTime = Mathf.Max(0f, directionBlendTime);
         particleStateCached = false;
+        UpdateVisualDirection();
     }
 
     private void LateUpdate()
     {
+        UpdateAppliedDirection(Time.deltaTime);
         RefreshParticleSystem();
     }
 
@@ -79,20 +96,53 @@ public sealed class CurrentZone : MonoBehaviour
         if (!other.CompareTag("Player"))
             return;
 
-        Vector2 normalizedDirection = GetNormalizedFlowDirection();
-        if (normalizedDirection == Vector2.zero || flowForce <= 0f)
+        UpdateAppliedDirection(Time.fixedDeltaTime);
+
+        Vector2 normalizedDirection = GetAppliedFlowDirection();
+        if (normalizedDirection == Vector2.zero || force <= 0f)
+            return;
+
+        PlayerController player = other.GetComponentInParent<PlayerController>();
+        if (affectOnlyInWater && (player == null || player.currentMode != PlayerMode.Water))
             return;
 
         PlayerMovement movement = other.GetComponentInParent<PlayerMovement>();
         if (movement != null)
         {
-            movement.AddExternalVelocity(normalizedDirection * flowForce);
+            movement.AddExternalVelocity(normalizedDirection * force);
             return;
         }
 
         Rigidbody2D targetBody = other.attachedRigidbody;
         if (targetBody != null)
-            targetBody.linearVelocity += normalizedDirection * flowForce * Time.fixedDeltaTime;
+            targetBody.linearVelocity += normalizedDirection * force * Time.fixedDeltaTime;
+    }
+
+    public void SetDirection(Vector2 newDirection)
+    {
+        directionSource = DirectionSource.FlowDirection;
+        direction = newDirection.sqrMagnitude > 0f ? newDirection.normalized : Vector2.zero;
+        InitializeAppliedDirectionIfNeeded();
+        if (!Application.isPlaying || directionBlendTime <= 0f)
+            SnapAppliedDirection();
+
+        particleStateCached = false;
+        RefreshParticleSystem(true);
+        UpdateVisualDirection();
+    }
+
+    public void ReverseDirection()
+    {
+        Vector2 normalizedDirection = GetNormalizedFlowDirection();
+        if (normalizedDirection == Vector2.zero)
+            normalizedDirection = direction.sqrMagnitude > 0f ? direction.normalized : Vector2.right;
+
+        SetDirection(-normalizedDirection);
+    }
+
+    public void SetForce(float newForce)
+    {
+        force = Mathf.Max(0f, newForce);
     }
 
     private void BuildParticleSystem(Bounds zoneBounds, Vector2 dir)
@@ -298,10 +348,16 @@ public sealed class CurrentZone : MonoBehaviour
         {
             DirectionSource.TransformRight => (Vector2)transform.right,
             DirectionSource.CardinalDirection => GetCardinalDirectionVector(),
-            _ => flowDirection
+            _ => direction
         };
 
         return sourceDirection.sqrMagnitude > 0f ? sourceDirection.normalized : Vector2.zero;
+    }
+
+    private Vector2 GetAppliedFlowDirection()
+    {
+        InitializeAppliedDirectionIfNeeded();
+        return appliedDirection.sqrMagnitude > 0f ? appliedDirection.normalized : Vector2.zero;
     }
 
     private Vector2 GetCardinalDirectionVector()
@@ -329,8 +385,64 @@ public sealed class CurrentZone : MonoBehaviour
 
     private void NormalizeFlowDirection()
     {
-        if (flowDirection.sqrMagnitude > 0f)
-            flowDirection = flowDirection.normalized;
+        if (direction.sqrMagnitude > 0f)
+            direction = direction.normalized;
+    }
+
+    private void InitializeAppliedDirectionIfNeeded()
+    {
+        if (appliedDirectionInitialized)
+            return;
+
+        SnapAppliedDirection();
+    }
+
+    private void SnapAppliedDirection()
+    {
+        appliedDirection = GetNormalizedFlowDirection();
+        appliedDirectionVelocity = Vector2.zero;
+        appliedDirectionInitialized = true;
+    }
+
+    private void UpdateAppliedDirection(float deltaTime)
+    {
+        InitializeAppliedDirectionIfNeeded();
+
+        Vector2 targetDirection = GetNormalizedFlowDirection();
+        if (directionBlendTime <= 0f || deltaTime <= 0f)
+        {
+            appliedDirection = targetDirection;
+            appliedDirectionVelocity = Vector2.zero;
+            return;
+        }
+
+        appliedDirection = Vector2.SmoothDamp(
+            appliedDirection,
+            targetDirection,
+            ref appliedDirectionVelocity,
+            directionBlendTime,
+            Mathf.Infinity,
+            deltaTime);
+
+        if ((appliedDirection - targetDirection).sqrMagnitude <= 0.0001f)
+        {
+            appliedDirection = targetDirection;
+            appliedDirectionVelocity = Vector2.zero;
+        }
+    }
+
+    private void UpdateVisualDirection()
+    {
+        if (visualArrowParent == null)
+            return;
+
+        Vector2 normalizedDirection = GetNormalizedFlowDirection();
+        if (Mathf.Abs(normalizedDirection.x) <= 0.0001f)
+            return;
+
+        Vector3 scale = visualArrowParent.localScale;
+        scale.x = Mathf.Abs(scale.x) * Mathf.Sign(normalizedDirection.x);
+        visualArrowParent.localScale = scale;
     }
 
     private void OnDrawGizmosSelected()

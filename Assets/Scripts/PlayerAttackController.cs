@@ -29,6 +29,7 @@ public class PlayerAttackController : MonoBehaviour
     public bool tailAttackUsesBackDirection = true;
 
     private readonly HashSet<EnemyHealth> processedEnemies = new HashSet<EnemyHealth>();
+    private readonly HashSet<ElectricSwitch> processedSwitches = new HashSet<ElectricSwitch>();
     private float finAttackCooldownTimer;
     private float tailElectricCooldownTimer;
 
@@ -123,6 +124,7 @@ public class PlayerAttackController : MonoBehaviour
     private bool ActivateElectricNodes(Collider2D[] hitResults)
     {
         bool hitNode = false;
+        processedSwitches.Clear();
 
         for (int i = 0; i < hitResults.Length; i++)
         {
@@ -134,11 +136,21 @@ public class PlayerAttackController : MonoBehaviour
             if (node == null)
                 node = hit.GetComponentInParent<ElectricNode>();
 
-            if (node == null)
+            if (node != null)
+            {
+                hitNode = true;
+                node.ReactToElectricHit();
+            }
+
+            ElectricSwitch electricSwitch = hit.GetComponent<ElectricSwitch>();
+            if (electricSwitch == null)
+                electricSwitch = hit.GetComponentInParent<ElectricSwitch>();
+
+            if (electricSwitch == null || !processedSwitches.Add(electricSwitch))
                 continue;
 
             hitNode = true;
-            node.ReactToElectricHit();
+            electricSwitch.ActivateSwitch();
         }
 
         return hitNode;
