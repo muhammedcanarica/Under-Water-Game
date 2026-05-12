@@ -21,12 +21,15 @@ public sealed class CurrentZone : MonoBehaviour
     }
 
     [Header("Flow Settings")]
+    [SerializeField] private bool isActive = true;
     [SerializeField] private DirectionSource directionSource = DirectionSource.FlowDirection;
+    [FormerlySerializedAs("direction")]
     [FormerlySerializedAs("flowDirection")]
-    public Vector2 direction = Vector2.right;
+    public Vector2 forceDirection = Vector2.right;
     [SerializeField] private CardinalDirection inspectorDirection = CardinalDirection.Right;
+    [FormerlySerializedAs("force")]
     [FormerlySerializedAs("flowForce")]
-    public float force = 3f;
+    public float forceStrength = 3f;
     public bool affectOnlyInWater;
     [Tooltip("How quickly the push direction eases into a newly set direction. Use 0 for instant force reversal.")]
     public float directionBlendTime = 0.08f;
@@ -79,7 +82,7 @@ public sealed class CurrentZone : MonoBehaviour
         CacheCollider();
         NormalizeFlowDirection();
         EnsureTriggerCollider();
-        force = Mathf.Max(0f, force);
+        forceStrength = Mathf.Max(0f, forceStrength);
         directionBlendTime = Mathf.Max(0f, directionBlendTime);
         particleStateCached = false;
         UpdateVisualDirection();
@@ -93,13 +96,13 @@ public sealed class CurrentZone : MonoBehaviour
 
     private void OnTriggerStay2D(Collider2D other)
     {
-        if (!other.CompareTag("Player"))
+        if (!isActive || !other.CompareTag("Player"))
             return;
 
         UpdateAppliedDirection(Time.fixedDeltaTime);
 
         Vector2 normalizedDirection = GetAppliedFlowDirection();
-        if (normalizedDirection == Vector2.zero || force <= 0f)
+        if (normalizedDirection == Vector2.zero || forceStrength <= 0f)
             return;
 
         PlayerController player = other.GetComponentInParent<PlayerController>();
@@ -109,19 +112,19 @@ public sealed class CurrentZone : MonoBehaviour
         PlayerMovement movement = other.GetComponentInParent<PlayerMovement>();
         if (movement != null)
         {
-            movement.AddExternalVelocity(normalizedDirection * force);
+            movement.AddExternalVelocity(normalizedDirection * forceStrength);
             return;
         }
 
         Rigidbody2D targetBody = other.attachedRigidbody;
         if (targetBody != null)
-            targetBody.linearVelocity += normalizedDirection * force * Time.fixedDeltaTime;
+            targetBody.linearVelocity += normalizedDirection * forceStrength * Time.fixedDeltaTime;
     }
 
     public void SetDirection(Vector2 newDirection)
     {
         directionSource = DirectionSource.FlowDirection;
-        direction = newDirection.sqrMagnitude > 0f ? newDirection.normalized : Vector2.zero;
+        forceDirection = newDirection.sqrMagnitude > 0f ? newDirection.normalized : Vector2.zero;
         InitializeAppliedDirectionIfNeeded();
         if (!Application.isPlaying || directionBlendTime <= 0f)
             SnapAppliedDirection();
@@ -135,14 +138,28 @@ public sealed class CurrentZone : MonoBehaviour
     {
         Vector2 normalizedDirection = GetNormalizedFlowDirection();
         if (normalizedDirection == Vector2.zero)
-            normalizedDirection = direction.sqrMagnitude > 0f ? direction.normalized : Vector2.right;
+            normalizedDirection = forceDirection.sqrMagnitude > 0f ? forceDirection.normalized : Vector2.right;
 
         SetDirection(-normalizedDirection);
     }
 
     public void SetForce(float newForce)
     {
-        force = Mathf.Max(0f, newForce);
+        forceStrength = Mathf.Max(0f, newForce);
+    }
+
+    public void SetActive(bool active)
+    {
+        if (isActive == active)
+            return;
+
+        isActive = active;
+        particleStateCached = false;
+
+        if (isActive)
+            RefreshParticleSystem(true);
+        else
+            DestroyFlowParticles();
     }
 
     private void BuildParticleSystem(Bounds zoneBounds, Vector2 dir)
@@ -260,7 +277,7 @@ public sealed class CurrentZone : MonoBehaviour
 
     private void RefreshParticleSystem(bool forceRebuild = false)
     {
-        if (!showParticles)
+        if (!isActive || !showParticles)
         {
             DestroyFlowParticles();
             CacheParticleState(Vector2.zero, default, false);
@@ -348,7 +365,7 @@ public sealed class CurrentZone : MonoBehaviour
         {
             DirectionSource.TransformRight => (Vector2)transform.right,
             DirectionSource.CardinalDirection => GetCardinalDirectionVector(),
-            _ => direction
+            _ => forceDirection
         };
 
         return sourceDirection.sqrMagnitude > 0f ? sourceDirection.normalized : Vector2.zero;
@@ -385,8 +402,8 @@ public sealed class CurrentZone : MonoBehaviour
 
     private void NormalizeFlowDirection()
     {
-        if (direction.sqrMagnitude > 0f)
-            direction = direction.normalized;
+        if (forceDirection.sqrMagnitude > 0f)
+            forceDirection = forceDirection.normalized;
     }
 
     private void InitializeAppliedDirectionIfNeeded()
