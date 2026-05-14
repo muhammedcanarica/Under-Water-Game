@@ -1,5 +1,5 @@
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
 
 [RequireComponent(typeof(BoxCollider2D))]
 public class WaterZone : MonoBehaviour
@@ -23,14 +23,14 @@ public class WaterZone : MonoBehaviour
     [SerializeField] private Color waterColor = new Color(0f, 0.4f, 0.9f, 0.25f);
 
     [Header("Surface Buffer")]
-    [Tooltip("Collider üst kenarına eklenecek ekstra yükseklik (görsel suyun üstüne taşar)")]
+    [Tooltip("Collider ust kenarina eklenecek ekstra yukseklik (gorsel suyun ustune tasar)")]
     [SerializeField] private float colliderTopMargin = 0.5f;
 
-    [Tooltip("Oyuncu su yüzeyinden bu kadar yukarı çıkmadan Water modundan çıkmaz")]
+    [Tooltip("Oyuncu su yuzeyinden bu kadar yukari cikmadan Water modundan cikmaz")]
     [SerializeField] private float surfaceExitBuffer = 0.3f;
 
     [Header("Safety")]
-    [Tooltip("Oyuncu su yüzeyinin bu kadar üzerindeyse zorla çıkış yap")]
+    [Tooltip("Oyuncu su yuzeyinin bu kadar uzerindeyse zorla cikis yap")]
     [SerializeField] private float safetyExitMargin = 1.0f;
 
     [Header("Debug")]
@@ -48,74 +48,40 @@ public class WaterZone : MonoBehaviour
     /// <summary>Visible water surface Y (before margin). Used for exit logic.</summary>
     private float visualSurfaceY;
 
-    // --- A) Sürekli Overlap Takibi ---
-    // OnTriggerExit2D yerine Player sınırlarını manuel kontrol edeceğiz
-    private HashSet<Rigidbody2D> activePlayers = new HashSet<Rigidbody2D>();
+    private readonly HashSet<Rigidbody2D> activePlayers = new HashSet<Rigidbody2D>();
 
     private void Awake()
     {
         waterCollider = GetComponent<BoxCollider2D>();
         waterCollider.isTrigger = true;
 
-        // --- B) Doğru setup kontrolü ---
-        // WaterZone'da Rigidbody2D olmamalı
         Rigidbody2D rb = GetComponent<Rigidbody2D>();
         if (rb != null)
         {
-            Debug.LogWarning($"[WaterZone] '{name}' üzerinde gereksiz Rigidbody2D bulundu ve kaldırıldı.", this);
+            Debug.LogWarning($"[WaterZone] '{name}' uzerinde gereksiz Rigidbody2D bulundu ve kaldirildi.", this);
             Destroy(rb);
         }
 
-        // Fazla BoxCollider2D varsa temizle
         BoxCollider2D[] colliders = GetComponents<BoxCollider2D>();
         if (colliders.Length > 1)
         {
-            Debug.LogWarning($"[WaterZone] '{name}' üzerinde {colliders.Length} BoxCollider2D var, fazlaları kaldırılıyor.", this);
+            Debug.LogWarning($"[WaterZone] '{name}' uzerinde {colliders.Length} BoxCollider2D var, fazlalari kaldiriliyor.", this);
             for (int i = 1; i < colliders.Length; i++)
                 Destroy(colliders[i]);
         }
 
-        // Tag kontrolü — "Water" tag'i gerekli
         if (!gameObject.CompareTag("Water"))
-        {
-            Debug.LogWarning($"[WaterZone] '{name}' tag'i 'Water' değil! Trigger düzgün çalışmayabilir.", this);
-        }
+            Debug.LogWarning($"[WaterZone] '{name}' tag'i 'Water' degil! Trigger duzgun calismayabilir.", this);
 
-        // --- A) Collider üstüne margin ekle ---
-        // Görsel su yüzeyini kaydet, sonra collider'ı yukarı doğru genişlet
-        visualSurfaceY = waterCollider.bounds.max.y;
-
-        if (colliderTopMargin > 0f)
-        {
-            // size.y artır, offset.y yukarı kaydır (böylece alt kenar aynı kalır)
-            Vector2 size = waterCollider.size;
-            Vector2 offset = waterCollider.offset;
-            float addedHeight = colliderTopMargin;
-            size.y += addedHeight;
-            offset.y += addedHeight * 0.5f;
-            waterCollider.size = size;
-            waterCollider.offset = offset;
-
-            if (enableDebugLogs)
-                Debug.Log($"[WaterZone] Collider genişletildi: +{addedHeight:F2} yukarı margin. Yeni size.y={size.y:F2}", this);
-        }
-
+        ApplyColliderTopMargin();
         SetupWaterVisuals();
-        SyncWaterVisualsToCollider();
-
-        if (bubbleParticles != null)
-        {
-            var shape = bubbleParticles.shape;
-            shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(waterCollider.size.x, waterCollider.size.y, 1f);
-            bubbleParticles.transform.localPosition = waterCollider.offset;
-        }
+        RefreshForCurrentColliderBounds();
     }
 
-    // --- D) Continuous bounds check ---
     private void FixedUpdate()
     {
-        if (activePlayers.Count == 0) return;
+        if (activePlayers.Count == 0)
+            return;
 
         Bounds waterBounds = waterCollider.bounds;
         float waterTop = visualSurfaceY;
@@ -128,14 +94,15 @@ public class WaterZone : MonoBehaviour
         {
             if (playerRb == null)
             {
-                if (toRemove == null) toRemove = new List<Rigidbody2D>();
+                toRemove ??= new List<Rigidbody2D>();
                 toRemove.Add(playerRb);
                 continue;
             }
 
             Collider2D[] colliders = new Collider2D[10];
             int colCount = playerRb.GetAttachedColliders(colliders);
-            if (colCount == 0) continue;
+            if (colCount == 0)
+                continue;
 
             bool hasBounds = false;
             Bounds playerBounds = new Bounds();
@@ -154,7 +121,9 @@ public class WaterZone : MonoBehaviour
                     }
                 }
             }
-            if (!hasBounds) playerBounds = colliders[0].bounds; // Fallback to first if all are triggers
+
+            if (!hasBounds)
+                playerBounds = colliders[0].bounds;
 
             float playerBottom = playerBounds.min.y;
             float playerTop = playerBounds.max.y;
@@ -194,14 +163,22 @@ public class WaterZone : MonoBehaviour
                 }
             }
         }
+
+        if (toRemove == null)
+            return;
+
+        foreach (Rigidbody2D rb in toRemove)
+            activePlayers.Remove(rb);
     }
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        if (!collision.CompareTag("Player")) return;
+        if (!collision.CompareTag("Player"))
+            return;
 
         Rigidbody2D playerRb = collision.attachedRigidbody;
-        if (playerRb == null) return;
+        if (playerRb == null)
+            return;
 
         if (!activePlayers.Contains(playerRb))
         {
@@ -214,10 +191,12 @@ public class WaterZone : MonoBehaviour
 
     private void OnTriggerStay2D(Collider2D collision)
     {
-        if (!collision.CompareTag("Player")) return;
+        if (!collision.CompareTag("Player"))
+            return;
 
         Rigidbody2D playerRb = collision.attachedRigidbody;
-        if (playerRb == null) return;
+        if (playerRb == null)
+            return;
 
         if (!activePlayers.Contains(playerRb))
         {
@@ -230,10 +209,12 @@ public class WaterZone : MonoBehaviour
 
     private void OnTriggerExit2D(Collider2D collision)
     {
-        if (!collision.CompareTag("Player")) return;
+        if (!collision.CompareTag("Player"))
+            return;
 
         Rigidbody2D playerRb = collision.attachedRigidbody;
-        if (playerRb == null) return;
+        if (playerRb == null)
+            return;
 
         if (activePlayers.Contains(playerRb))
         {
@@ -244,7 +225,7 @@ public class WaterZone : MonoBehaviour
             {
                 if (spawnSplashOnTransition)
                     SpawnSplashEffect(new Vector3(playerRb.transform.position.x, visualSurfaceY, 0f), playerRb.linearVelocity);
-                
+
                 player.ApplyModeProperties(PlayerMode.Land, false);
             }
 
@@ -253,17 +234,18 @@ public class WaterZone : MonoBehaviour
         }
     }
 
-    // Oyuncu disable/destroy olursa temizle
     private void OnDisable()
     {
-        // Tüm takip edilen oyuncuları Land moduna geri al
-        foreach (var rb in activePlayers)
+        foreach (Rigidbody2D rb in activePlayers)
         {
-            if (rb == null) continue;
+            if (rb == null)
+                continue;
+
             PlayerController player = rb.GetComponent<PlayerController>();
             if (player != null && player.currentMode == PlayerMode.Water)
                 player.ApplyModeProperties(PlayerMode.Land, true);
         }
+
         activePlayers.Clear();
     }
 
@@ -275,14 +257,17 @@ public class WaterZone : MonoBehaviour
         {
             Texture2D tex = new Texture2D(16, 16);
             Color[] pixels = new Color[16 * 16];
-            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.white;
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = Color.white;
+
             tex.SetPixels(pixels);
             tex.Apply();
             waterSpriteRenderer.sprite = Sprite.Create(
                 tex,
                 new Rect(0, 0, 16, 16),
                 new Vector2(0.5f, 0.5f),
-                16, 0,
+                16,
+                0,
                 SpriteMeshType.FullRect,
                 new Vector4(1, 1, 1, 1));
         }
@@ -292,9 +277,50 @@ public class WaterZone : MonoBehaviour
         waterSpriteRenderer.sortingOrder = 10;
     }
 
+    public void RefreshForCurrentColliderBounds()
+    {
+        if (waterCollider == null)
+            waterCollider = GetComponent<BoxCollider2D>();
+
+        if (waterCollider == null)
+            return;
+
+        visualSurfaceY = waterCollider.bounds.max.y - Mathf.Max(0f, colliderTopMargin);
+        SyncWaterVisualsToCollider();
+
+        if (bubbleParticles != null)
+        {
+            var shape = bubbleParticles.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(waterCollider.size.x, waterCollider.size.y, 1f);
+            bubbleParticles.transform.localPosition = waterCollider.offset;
+        }
+    }
+
+    private void ApplyColliderTopMargin()
+    {
+        visualSurfaceY = waterCollider.bounds.max.y;
+
+        if (colliderTopMargin <= 0f)
+            return;
+
+        Vector2 size = waterCollider.size;
+        Vector2 offset = waterCollider.offset;
+        float addedHeight = colliderTopMargin;
+        size.y += addedHeight;
+        offset.y += addedHeight * 0.5f;
+        waterCollider.size = size;
+        waterCollider.offset = offset;
+
+        if (enableDebugLogs)
+            Debug.Log($"[WaterZone] Collider expanded upward by {addedHeight:F2}. New size.y={size.y:F2}", this);
+    }
+
     private void OnValidate()
     {
-        if (waterCollider == null) waterCollider = GetComponent<BoxCollider2D>();
+        if (waterCollider == null)
+            waterCollider = GetComponent<BoxCollider2D>();
+
         waterSpriteRenderer = ResolveVisualRenderer();
 
         if (waterCollider != null && waterSpriteRenderer != null)
@@ -302,11 +328,13 @@ public class WaterZone : MonoBehaviour
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.delayCall += () =>
             {
-                if (this == null) return;
-                SyncWaterVisualsToCollider();
+                if (this == null)
+                    return;
+
+                RefreshForCurrentColliderBounds();
             };
 #else
-            SyncWaterVisualsToCollider();
+            RefreshForCurrentColliderBounds();
 #endif
         }
     }
@@ -314,9 +342,7 @@ public class WaterZone : MonoBehaviour
     private SpriteRenderer ResolveVisualRenderer()
     {
         if (visualRenderer != null)
-        {
             return visualRenderer;
-        }
 
         SpriteRenderer childRenderer = transform.Find(RuntimeVisualName)?.GetComponent<SpriteRenderer>();
         if (childRenderer != null)
@@ -341,9 +367,7 @@ public class WaterZone : MonoBehaviour
     private void SyncWaterVisualsToCollider()
     {
         if (waterCollider == null || waterSpriteRenderer == null)
-        {
             return;
-        }
 
         waterSpriteRenderer.color = waterColor;
         waterSpriteRenderer.size = waterCollider.size;
@@ -355,9 +379,7 @@ public class WaterZone : MonoBehaviour
         {
             SpriteRenderer rootRenderer = GetComponent<SpriteRenderer>();
             if (rootRenderer != null)
-            {
                 rootRenderer.enabled = false;
-            }
         }
     }
 
@@ -452,9 +474,7 @@ public class WaterZone : MonoBehaviour
 
         Sprite splashSprite = GetSplashSprite();
         if (splashSprite != null)
-        {
             textureSheetAnimation.AddSprite(splashSprite);
-        }
 
         var velocityOverLifetime = particleSystem.velocityOverLifetime;
         velocityOverLifetime.enabled = true;
@@ -554,23 +574,20 @@ public class WaterZone : MonoBehaviour
         return runtimeSplashSprite;
     }
 
-    // Gizmos — collider bounds, visual surface, and buffer zone
     private void OnDrawGizmos()
     {
         BoxCollider2D col = GetComponent<BoxCollider2D>();
-        if (col == null) return;
+        if (col == null)
+            return;
 
         Bounds bounds = col.bounds;
         Vector3 center = bounds.center;
         Vector3 size = bounds.size;
 
-        // Collider sınırı — kırmızı wire (trigger alanı, margin dahil)
         Gizmos.color = Color.red;
         Gizmos.DrawWireCube(center, size);
 
-        // Görsel su alanı — mavi dolgu (margin olmadan)
-        // Runtime'da visualSurfaceY set edilir; editörde collider üst kenarını kullan
-        float effectiveSurfaceY = Application.isPlaying ? visualSurfaceY : bounds.max.y;
+        float effectiveSurfaceY = Application.isPlaying ? visualSurfaceY : bounds.max.y - Mathf.Max(0f, colliderTopMargin);
         float visualHeight = effectiveSurfaceY - bounds.min.y;
         Vector3 visualCenter = new Vector3(center.x, bounds.min.y + visualHeight * 0.5f, 0f);
         Vector3 visualSize = new Vector3(size.x, visualHeight, size.z);
@@ -580,16 +597,12 @@ public class WaterZone : MonoBehaviour
         Gizmos.color = new Color(0f, 0.5f, 1f, 0.6f);
         Gizmos.DrawWireCube(visualCenter, visualSize);
 
-        // Buffer zone — sarı wire (yüzey + surfaceExitBuffer)
         float bufferY = effectiveSurfaceY + surfaceExitBuffer;
         Gizmos.color = new Color(1f, 0.9f, 0.1f, 0.5f);
         float leftX = bounds.min.x;
         float rightX = bounds.max.x;
-        Gizmos.DrawLine(
-            new Vector3(leftX, bufferY, 0f),
-            new Vector3(rightX, bufferY, 0f));
+        Gizmos.DrawLine(new Vector3(leftX, bufferY, 0f), new Vector3(rightX, bufferY, 0f));
 
-        // Üst yüzey — dalgalı çizgi (görsel su yüzeyi)
         Gizmos.color = new Color(0.4f, 0.8f, 1f, 0.8f);
         int segments = 20;
         float step = (rightX - leftX) / segments;
@@ -605,14 +618,10 @@ public class WaterZone : MonoBehaviour
                 new Vector3(x2, effectiveSurfaceY + wave2, 0f));
         }
 
-        // Safety exit line — kırmızı çizgi
         Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.6f);
         float safetyY = effectiveSurfaceY + safetyExitMargin;
-        Gizmos.DrawLine(
-            new Vector3(leftX, safetyY, 0f),
-            new Vector3(rightX, safetyY, 0f));
+        Gizmos.DrawLine(new Vector3(leftX, safetyY, 0f), new Vector3(rightX, safetyY, 0f));
 
-        // Su sembolü
         Gizmos.color = new Color(0f, 0.6f, 1f, 0.5f);
         float labelSize = Mathf.Min(size.x, size.y) * 0.08f;
         Gizmos.DrawWireSphere(center, labelSize);

@@ -1,14 +1,15 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 [RequireComponent(typeof(Collider2D))]
 public class ValveInteract : MonoBehaviour
 {
-    [SerializeField] private Room5Controller room5Controller;
-    [SerializeField] private bool isMainValve = true;
+    [FormerlySerializedAs("room5Controller")]
+    [FormerlySerializedAs("room4Controller")]
+    [SerializeField] private RoomActivationController roomActivationController;
 
     private bool playerInside;
-    private bool used;
 
     private void Awake()
     {
@@ -24,7 +25,7 @@ public class ValveInteract : MonoBehaviour
 
     private void Update()
     {
-        if (!playerInside || used)
+        if (!playerInside)
             return;
 
         if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
@@ -45,14 +46,12 @@ public class ValveInteract : MonoBehaviour
 
     private void UseValve()
     {
-        if (room5Controller == null)
+        if (roomActivationController == null)
+        {
+            Debug.LogWarning($"[{nameof(ValveInteract)}] RoomActivationController is not assigned on '{name}'.", this);
             return;
+        }
 
-        used = true;
-
-        if (isMainValve)
-            room5Controller.ActivateMainValve();
-        else
-            room5Controller.ActivateSecondValve();
+        roomActivationController.ActivateRoom();
     }
 }
