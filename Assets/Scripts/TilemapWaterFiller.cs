@@ -12,7 +12,6 @@ public class TilemapWaterFiller : MonoBehaviour
 
     [Header("Timing")]
     [SerializeField] private float fillDelayPerRow = 0.15f;
-    [SerializeField] private float fillDelayPerTile = 0.02f;
 
     [Header("Behavior")]
     [SerializeField] private bool randomizeTilesInRow;
@@ -62,11 +61,9 @@ public class TilemapWaterFiller : MonoBehaviour
             foreach (Vector3Int cellPosition in row)
             {
                 waterTilemap.SetTile(cellPosition, waterTile);
-                RefreshWaterCollider();
-
-                if (fillDelayPerTile > 0f)
-                    yield return new WaitForSeconds(fillDelayPerTile);
             }
+
+            RefreshWaterCollider();
 
             if (fillDelayPerRow > 0f)
                 yield return new WaitForSeconds(fillDelayPerRow);
@@ -192,6 +189,5 @@ public class TilemapWaterFiller : MonoBehaviour
     private void OnValidate()
     {
         fillDelayPerRow = Mathf.Max(0f, fillDelayPerRow);
-        fillDelayPerTile = Mathf.Max(0f, fillDelayPerTile);
     }
 }
